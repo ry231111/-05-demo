@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f7a6d">
+  <title>好事媒合助手｜為計畫找對的組織</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header"><div class="header-inner">
+    <a class="brand" href="#step-1" aria-label="好事媒合助手首頁"><span class="brand-mark" aria-hidden="true">好<span>✳</span></span><span><strong>好事媒合助手</strong><small>為計畫找對的組織</small></span></a>
+    <div id="data-meta" class="data-meta"></div>
+  </div></header>
+  <div class="workspace">
+    <nav class="steps" aria-label="媒合流程">
+      <button type="button" data-step="1"><span>01</span><strong>需求輸入</strong><small>把想法變成條件</small></button>
+      <button type="button" data-step="2"><span>02</span><strong>候選名單</strong><small>推薦有理由，選擇有依據</small></button>
+      <button type="button" data-step="3"><span>03</span><strong>組織詳情</strong><small>看見組織的完整脈絡</small></button>
+      <button type="button" data-step="4"><span>04</span><strong>第二輪回饋</strong><small>留下同事接得住的判斷</small></button>
+      <button type="button" data-step="5"><span>05</span><strong>提示詞與驗證</strong><small>讓每一筆引用都能確認</small></button>
+    </nav>
+    <div id="global-notices"></div>
+    <main id="main" tabindex="-1">
+      <section id="step-1" class="page" aria-label="01 需求輸入"></section>
+      <section id="step-2" class="page" aria-label="02 候選名單" hidden></section>
+      <section id="step-3" class="page" aria-label="03 組織詳情" hidden></section>
+      <section id="step-4" class="page" aria-label="04 第二輪回饋" hidden></section>
+      <section id="step-5" class="page" aria-label="05 Claude 提示詞與驗證" hidden></section>
+    </main>
+    <footer class="site-footer"><span>好事大平台 · 讓每一次邀請，都更有依據</span><span>展示用虛構資料 · PM 保留最後決定</span></footer>
+  </div>
+  <div id="drawer-backdrop" class="backdrop" hidden></div>
+  <aside id="evidence-drawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" hidden></aside>
+  <dialog id="feedback-dialog" aria-labelledby="feedback-title"></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="../output/bundle.js"></script>
+  <script src="engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

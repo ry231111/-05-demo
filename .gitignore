@@ -1,0 +1,5 @@
+output/extract_run.log
+output/extract_last_message.md
+__pycache__/
+*.pyc
+.claude/settings.local.json

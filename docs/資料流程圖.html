@@ -1,0 +1,281 @@
+<title>好事大平台流程圖</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 版面：一欄閱讀寬度，兩張圖各佔一段；實線＝流程已通，琥珀色虛線＝需要隊友接手 */
+:root {
+  --bg: #F4F7F6;
+  --card: #FFFFFF;
+  --fg: #18302B;
+  --muted: #5C6E6A;
+  --line: #C9D6D2;
+  --accent: #1E7666;
+  --in: #2F5DB0;
+  --edit: #B0405A;
+  --todo: #B36A00;
+  --todo-bg: #FFF8EC;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101816; --card: #172320; --fg: #E3ECE9; --muted: #9AABA7; --line: #34463F;
+    --accent: #5CC4AE; --in: #86A8F0; --edit: #EC8BA0; --todo: #F0B252; --todo-bg: #2A2115;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101816; --card: #172320; --fg: #E3ECE9; --muted: #9AABA7; --line: #34463F;
+  --accent: #5CC4AE; --in: #86A8F0; --edit: #EC8BA0; --todo: #F0B252; --todo-bg: #2A2115;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+}
+.wrap {
+  max-width: 1240px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 56px;
+  display: grid; gap: 40px;
+}
+header { display: grid; gap: 12px; }
+h1 { font-size: 26px; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 62ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { width: 28px; height: 16px; border-radius: 4px; background: var(--card); border: 1.5px solid var(--line); }
+.sw.todo { border: 1.5px dashed var(--todo); background: var(--todo-bg); }
+
+section { display: grid; gap: 14px; }
+.kicker { font-size: 12.5px; letter-spacing: .08em; color: var(--accent); font-weight: 700; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.scroll { overflow-x: auto; }
+.scroll svg { display: block; min-width: 980px; width: 100%; height: auto; }
+
+/* SVG */
+.box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+.box.todo { fill: var(--todo-bg); stroke: var(--todo); stroke-dasharray: 7 5; }
+.box.ai { fill: var(--bg); }
+.t-title { fill: var(--fg); font: 700 16px var(--font-body); }
+.t-body { fill: var(--muted); font: 400 13.5px var(--font-body); }
+.t-mono { fill: var(--accent); font: 500 12px var(--font-mono); }
+.t-tag { fill: var(--todo); font: 700 12.5px var(--font-body); }
+.t-phase { fill: var(--muted); font: 500 12.5px var(--font-body); letter-spacing: .04em; }
+.phase { stroke: var(--line); stroke-width: 1.5; }
+.edge { stroke: var(--accent); stroke-width: 2; fill: none; }
+.edge.todo { stroke: var(--todo); stroke-dasharray: 6 5; }
+.edge.loop { stroke: var(--in); stroke-width: 1.6; }
+.t-loop { fill: var(--in); font: 500 13px var(--font-body); }
+.head { fill: var(--accent); }
+.head.todo { fill: var(--todo); }
+.head.loop { fill: var(--in); }
+
+.notes { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0; padding: 0; list-style: none; font-size: 14px; color: var(--muted); }
+.notes li::before { content: "・"; color: var(--accent); }
+code { font-family: var(--font-mono); font-size: .88em; color: var(--accent); }
+
+/* 檔案樹 */
+.tree-panel { padding: 18px 20px; }
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree ul { margin-left: 10px; padding-left: 18px; border-left: 1.5px solid var(--line); }
+.row {
+  display: grid; grid-template-columns: minmax(200px, 300px) 104px 1fr;
+  align-items: baseline; gap: 4px 14px; padding: 6px 10px; border-radius: 6px;
+}
+.row.todo { border: 1.5px dashed var(--todo); background: var(--todo-bg); margin-block: 4px; }
+.name { font-family: var(--font-mono); font-size: 13.5px; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.name.dir { font-weight: 700; }
+.note { color: var(--muted); font-size: 13.5px; min-width: 0; }
+.tag {
+  justify-self: start; font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 999px; white-space: nowrap;
+  color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+.tag.in { color: var(--in); background: color-mix(in srgb, var(--in) 13%, transparent); }
+.tag.edit { color: var(--edit); background: color-mix(in srgb, var(--edit) 13%, transparent); }
+.tag.gen { color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.tag.todo { color: var(--todo); background: transparent; border: 1.5px dashed var(--todo); }
+.tag.empty { visibility: hidden; }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.step { padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.step.todo { border: 1.5px dashed var(--todo); background: var(--todo-bg); }
+.step b { font-size: 15px; }
+.step span { color: var(--muted); font-size: 13.5px; }
+.step .n { font-family: var(--font-mono); font-size: 12px; color: var(--accent); font-weight: 500; }
+.step.todo .n { color: var(--todo); }
+
+@media (max-width: 640px) {
+  .row { grid-template-columns: 1fr auto; }
+  .row .note { grid-column: 1 / -1; }
+  .tree ul { padding-left: 12px; margin-left: 6px; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>好事大平台組：資料怎麼流、檔案放哪裡</h1>
+    <p class="lede">給隊友對齊用。圖 1 是整條資料流程，圖 2 是 11/15 官方假資料進來之後，專案裡每個檔案的角色。</p>
+    <div class="legend">
+      <span><i class="sw"></i>實線：流程已通，照表操作</span>
+      <span><i class="sw todo"></i>琥珀色虛線：需要隊友接手（UI、簡報）</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="kicker">圖 1</div>
+    <h2>資料流程</h2>
+    <div class="panel scroll">
+      <svg viewBox="0 0 1200 360" role="img" aria-label="資料流程：原始資料、整理、組織檔、篩選引擎、網頁 UI、部署、簡報">
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0 0L10 5L0 10z"/></marker>
+          <marker id="at" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head todo" d="M0 0L10 5L0 10z"/></marker>
+          <marker id="al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head loop" d="M0 0L10 5L0 10z"/></marker>
+        </defs>
+
+        <!-- 階段 -->
+        <text class="t-phase" x="21" y="28">準備資料｜build 時跑一次</text>
+        <line class="phase" x1="21" y1="38" x2="499" y2="38"/>
+        <text class="t-phase" x="531" y="28">使用｜網頁上即時算</text>
+        <line class="phase" x1="531" y1="38" x2="839" y2="38"/>
+        <text class="t-phase" x="871" y="28">交付</text>
+        <line class="phase" x1="871" y1="38" x2="1179" y2="38"/>
+
+        <!-- AI 標籤 -->
+        <rect class="box ai" x="191" y="60" width="308" height="64" rx="8"/>
+        <text class="t-title" x="207" y="86">AI 標籤</text>
+        <text class="t-mono" x="483" y="86" text-anchor="end">signals.json</text>
+        <text class="t-body" x="207" y="110">Codex 讀自由文字，每個標籤附原文</text>
+        <line class="edge" x1="260" y1="150" x2="260" y2="128" marker-end="url(#a)"/>
+        <line class="edge" x1="430" y1="124" x2="430" y2="146" marker-end="url(#a)"/>
+
+        <!-- 主流程 -->
+        <rect class="box" x="21" y="150" width="138" height="130" rx="8"/>
+        <text class="t-title" x="35" y="182">原始資料</text>
+        <text class="t-body" x="35" y="208">組織主檔</text>
+        <text class="t-body" x="35" y="228">接觸紀錄・顧問筆記</text>
+        <text class="t-mono" x="35" y="264">data/official/</text>
+
+        <rect class="box" x="191" y="150" width="138" height="130" rx="8"/>
+        <text class="t-title" x="205" y="182">整理</text>
+        <text class="t-body" x="205" y="208">依欄位對照表</text>
+        <text class="t-body" x="205" y="228">把三張表串起來</text>
+        <text class="t-mono" x="205" y="264">build.py</text>
+
+        <rect class="box" x="361" y="150" width="138" height="130" rx="8"/>
+        <text class="t-title" x="375" y="182">組織檔</text>
+        <text class="t-body" x="375" y="208">每家組織一份</text>
+        <text class="t-body" x="375" y="228">附接觸時間軸</text>
+        <text class="t-mono" x="375" y="264">output/</text>
+
+        <rect class="box" x="531" y="150" width="138" height="130" rx="8"/>
+        <text class="t-title" x="545" y="182">篩選引擎</text>
+        <text class="t-body" x="545" y="208">硬條件篩選</text>
+        <text class="t-body" x="545" y="228">算分＋推薦理由</text>
+        <text class="t-mono" x="545" y="264">engine.js</text>
+
+        <rect class="box todo" x="701" y="150" width="138" height="130" rx="8"/>
+        <text class="t-title" x="715" y="182">網頁 UI</text>
+        <text class="t-body" x="715" y="208">需求→名單→詳情</text>
+        <text class="t-body" x="715" y="228">回饋→提示詞</text>
+        <text class="t-tag" x="715" y="264">待 UI 隊友</text>
+
+        <rect class="box" x="871" y="150" width="138" height="130" rx="8"/>
+        <text class="t-title" x="885" y="182">部署</text>
+        <text class="t-body" x="885" y="208">GitHub Pages</text>
+        <text class="t-body" x="885" y="228">拿到分享網址</text>
+        <text class="t-mono" x="885" y="264">web/ + output/</text>
+
+        <rect class="box todo" x="1041" y="150" width="138" height="130" rx="8"/>
+        <text class="t-title" x="1055" y="182">簡報</text>
+        <text class="t-body" x="1055" y="208">最多 3 頁</text>
+        <text class="t-body" x="1055" y="228">含 7 分鐘 demo</text>
+        <text class="t-tag" x="1055" y="264">16:45 繳交</text>
+
+        <line class="edge" x1="161" y1="215" x2="187" y2="215" marker-end="url(#a)"/>
+        <line class="edge" x1="331" y1="215" x2="357" y2="215" marker-end="url(#a)"/>
+        <line class="edge" x1="501" y1="215" x2="527" y2="215" marker-end="url(#a)"/>
+        <line class="edge todo" x1="671" y1="215" x2="697" y2="215" marker-end="url(#at)"/>
+        <line class="edge todo" x1="841" y1="215" x2="867" y2="215" marker-end="url(#at)"/>
+        <line class="edge todo" x1="1011" y1="215" x2="1037" y2="215" marker-end="url(#at)"/>
+
+        <!-- 回饋迴圈 -->
+        <path class="edge loop" d="M770 282 V324 H260 V286" marker-end="url(#al)"/>
+        <text class="t-loop" x="515" y="314" text-anchor="middle">PM 勾「符合／不符合＋一句話」→ 下次 build 寫回組織檔</text>
+        <text class="t-mono" x="515" y="346" text-anchor="middle">data/feedback/</text>
+      </svg>
+    </div>
+    <ul class="notes">
+      <li>換資料只改 <code>config/columns.json</code>，UI 不用動</li>
+      <li>AI 只在 build 時跑一次，網頁不即時呼叫 AI</li>
+      <li>每條推薦理由都附紀錄編號＋原文，可點回去查</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="kicker">圖 2</div>
+    <h2>官方假資料進來之後的檔案組成</h2>
+    <div class="legend">
+      <span><i class="tag in">① 放進來</i></span>
+      <span><i class="tag edit">② 改這裡</i></span>
+      <span><i class="tag gen">③ 自動產生</i></span>
+      <span><i class="tag">不用動</i></span>
+      <span><i class="tag todo">待隊友</i></span>
+    </div>
+    <div class="panel tree-panel scroll">
+      <ul class="tree">
+        <li><div class="row"><span class="name dir">好事大平台系統/</span><span class="tag empty">-</span><span class="note"></span></div>
+          <ul>
+            <li><div class="row"><span class="name dir">data/</span><span class="tag empty">-</span><span class="note"></span></div>
+              <ul>
+                <li><div class="row"><span class="name dir">official/</span><span class="tag in">① 放進來</span><span class="note">Google Sheet 各分頁匯出 CSV，檔名要和 columns.json 一致</span></div>
+                  <ul>
+                    <li><div class="row"><span class="name">組織主檔.csv</span><span class="tag in">① 放進來</span><span class="note">48 家，一家一列</span></div></li>
+                    <li><div class="row"><span class="name">接觸紀錄.csv</span><span class="tag in">① 放進來</span><span class="note">約 200 筆，一次接觸一列</span></div></li>
+                    <li><div class="row"><span class="name">顧問筆記.csv</span><span class="tag in">① 放進來</span><span class="note">只有 14 家有</span></div></li>
+                  </ul>
+                </li>
+                <li><div class="row"><span class="name dir">mock/</span><span class="tag">不用動</span><span class="note">自造假資料，留著當備案</span></div></li>
+                <li><div class="row"><span class="name dir">demands/</span><span class="tag">不用動</span><span class="note">示範需求，可再加任務卡上的需求</span></div></li>
+                <li><div class="row"><span class="name dir">feedback/</span><span class="tag gen">自動累積</span><span class="note">網頁匯出的 PM 回饋，下次 build 寫回組織檔</span></div></li>
+              </ul>
+            </li>
+            <li><div class="row"><span class="name">config/columns.json</span><span class="tag edit">② 改這裡</span><span class="note">source 改成 official，補上官方欄名和值的寫法</span></div></li>
+            <li><div class="row"><span class="name dir">rules/</span><span class="tag">不用動</span><span class="note">rules.json（18 條判斷規則）、conditions.json（需求條件）</span></div></li>
+            <li><div class="row"><span class="name dir">scripts/</span><span class="tag">不用動</span><span class="note">③ 依序跑：profile.py → build.py → extract/run.sh</span></div></li>
+            <li><div class="row"><span class="name dir">output/</span><span class="tag gen">③ 自動產生</span><span class="note">跑完腳本就會更新，不要手改</span></div>
+              <ul>
+                <li><div class="row"><span class="name">profile.md</span><span class="tag gen">③ 自動產生</span><span class="note">資料健檢：缺哪些欄、哪些值沒對到</span></div></li>
+                <li><div class="row"><span class="name">build_log.md</span><span class="tag gen">③ 自動產生</span><span class="note">停用了哪些規則、AI 標籤丟掉幾筆</span></div></li>
+                <li><div class="row"><span class="name">orgs/{組織編號}.md × 48</span><span class="tag gen">③ 自動產生</span><span class="note">每家組織一份，人和 Claude 都能讀</span></div></li>
+                <li><div class="row"><span class="name">signals.json</span><span class="tag gen">③ 自動產生</span><span class="note">AI 標籤，每筆附原文</span></div></li>
+                <li><div class="row"><span class="name">orgs.json・bundle.js</span><span class="tag gen">③ 自動產生</span><span class="note">給網頁讀，內容和組織檔相同</span></div></li>
+              </ul>
+            </li>
+            <li><div class="row"><span class="name dir">web/</span><span class="tag empty">-</span><span class="note"></span></div>
+              <ul>
+                <li><div class="row"><span class="name">engine.js</span><span class="tag">不用動</span><span class="note">篩選、算分、理由與警訊</span></div></li>
+                <li><div class="row todo"><span class="name">index.html・style.css・app.js</span><span class="tag todo">待 UI 隊友</span><span class="note">照 Figma 刻畫面，只讀 bundle.js，不碰 engine</span></div></li>
+              </ul>
+            </li>
+            <li><div class="row"><span class="name dir">docs/</span><span class="tag empty">-</span><span class="note"></span></div>
+              <ul>
+                <li><div class="row todo"><span class="name">簡報</span><span class="tag todo">待做</span><span class="note">問題／方法／成果怎麼用，最多 3 頁</span></div></li>
+              </ul>
+            </li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+
+    <div class="steps">
+      <div class="panel step"><span class="n">① → ③</span><b>導入官方資料</b><span>放 CSV、改 columns.json、跑三支腳本，目標 1 小時內</span></div>
+      <div class="panel step todo"><span class="n">UI</span><b>網頁畫面</b><span>11:00 前 Figma 沒好就用陽春版 demo</span></div>
+      <div class="panel step"><span class="n">部署</span><b>GitHub Pages</b><span>發布 web/ ＋ output/，連結設成知道連結就能看</span></div>
+      <div class="panel step todo"><span class="n">簡報</span><b>16:15 開始做</b><span>16:45 繳交，之後不能改</span></div>
+    </div>
+  </section>
+</div>
