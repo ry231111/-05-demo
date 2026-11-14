@@ -8,7 +8,7 @@ PM 接到企業一句話需求時打開：輸入需求 → 轉成條件 → 候�
 
 ## 怎麼打開
 
-- **線上版**：GitHub Pages 網址（部署後補上），開 `/web/`。
+- **線上版**：https://ry231111.github.io/haoshi-matching/ （repo：https://github.com/ry231111/haoshi-matching ）
 - **本機**：在專案根目錄跑下面這行，再開 http://localhost:8765/web/
 
 ```bash
