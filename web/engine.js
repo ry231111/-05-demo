@@ -289,11 +289,11 @@
     return { ok_count, bad_count: items.length - ok_count, items };
   }
 
-  function feedbackItem(org_id, verdict, reason_code, note) {
+  function feedbackItem(org_id, verdict, reason_code, note, by = 'PM', tags = [], primary_label = '') {
     const today = new Date();
     const date = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'),
       String(today.getDate()).padStart(2, '0')].join('-');
-    return { org_id, verdict, reason_code, note, by: 'PM', date };
+    return { org_id, verdict, reason_code, note, by, date, tags, primary_label };
   }
 
   return { init(appData) { data = appData; }, parseSentence, rank, buildPrompt, verifyReply,

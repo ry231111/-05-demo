@@ -6,6 +6,9 @@
   <meta name="theme-color" content="#1f7a6d">
   <title>好事媒合助手｜為計畫找對的組織</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <header class="site-header"><div class="header-inner">
@@ -14,11 +17,9 @@
   </div></header>
   <div class="workspace">
     <nav class="steps" aria-label="媒合流程">
-      <button type="button" data-step="1"><span>01</span><strong>需求輸入</strong><small>把想法變成條件</small></button>
-      <button type="button" data-step="2"><span>02</span><strong>候選名單</strong><small>推薦有理由，選擇有依據</small></button>
-      <button type="button" data-step="3"><span>03</span><strong>組織詳情</strong><small>看見組織的完整脈絡</small></button>
-      <button type="button" data-step="4"><span>04</span><strong>第二輪回饋</strong><small>留下同事接得住的判斷</small></button>
-      <button type="button" data-step="5"><span>05</span><strong>提示詞與驗證</strong><small>讓每一筆引用都能確認</small></button>
+      <button type="button" data-step="1"><span>01</span><strong>建立名單</strong><small>把需求變成條件</small></button>
+      <button type="button" data-step="2"><span>02</span><strong>審核名單</strong><small>比較組織與留下判斷</small></button>
+      <button type="button" data-step="5"><span>03</span><strong>選用工具</strong><small>整理推薦文字與引用</small></button>
     </nav>
     <div id="global-notices"></div>
     <main id="main" tabindex="-1">
@@ -32,6 +33,7 @@
   </div>
   <div id="drawer-backdrop" class="backdrop" hidden></div>
   <aside id="evidence-drawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" hidden></aside>
+  <aside id="evidence-popover" class="evidence-popover" role="status" hidden></aside>
   <dialog id="feedback-dialog" aria-labelledby="feedback-title"></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <script src="../output/bundle.js"></script>

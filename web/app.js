@@ -9,6 +9,8 @@
   const data = window.APP_DATA;
   const STORE = 'good-match-pm-v1';
   const VOTES = 'good-match-labels-v1';
+  const PEOPLE = 'good-match-people-v1';
+  const LABEL_HISTORY = 'good-match-label-history-v1';
   let storageAvailable = true;
   function read(key, fallback) {
     try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; }
@@ -18,13 +20,15 @@
     try { localStorage.setItem(key, JSON.stringify(value)); }
     catch (_) { storageAvailable = false; toast('已保留本次操作；此瀏覽器無法保存，關閉前請下載回饋。'); }
   }
-  const feedbackKey = f => [f.org_id, f.verdict, f.reason_code || '', f.note || '', f.by || '', f.date || ''].join('|');
+  const feedbackKey = f => [f.org_id, f.verdict, arr(f.reason_code).join('、'), f.primary_label || '', f.note || '', arr(f.tags).join('、'), f.by || '', f.date || ''].join('|');
   const saved = read(STORE, {items:[], deleted:[]});
   const deleted = new Set(arr(saved.deleted));
   const seed = arr(data?.feedback?.items || data?.feedback?.feedback || data?.feedback);
   const feedbackMap = new Map([...seed, ...arr(saved.items)].filter(f => f && f.org_id && !deleted.has(feedbackKey(f))).map(f => [feedbackKey(f), f]));
   let feedback = [...feedbackMap.values()];
   const votes = read(VOTES, {});
+  const people = read(PEOPLE, ['PM', '資深顧問', '會員窗口', '其他夥伴']);
+  const labelHistory = read(LABEL_HISTORY, []);
   const state = { step:1, sentence:'', conditions:null, result:null, selected:null, reply:'', verified:null, prompt:'', focusRecord:null };
   const orgs = arr(data?.orgs?.orgs);
   const meta = data?.orgs?.meta || {};
@@ -35,12 +39,27 @@
   const reasonEntries = Object.entries(settings.feedback_reasons || {}).filter(([key]) => !key.startsWith('_'));
   const softEntries = Object.entries(settings.soft || {}).filter(([key]) => !key.startsWith('_'));
   let lastDrawerFocus = null;
+  let hoverEvidenceTimer;
   let toastTimer;
   function toast(message) {
     const el = $('#toast'); el.textContent = message; el.hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 4500);
   }
   function persist() { write(STORE, {items:feedback, deleted:[...deleted]}); }
+  function personOptions(selected = '') {
+    return people.map(person => '<option value="'+esc(person)+'" '+(person === selected ? 'selected' : '')+'>'+esc(person)+'</option>').join('')+
+      '<option value="__new__">＋新增留言人</option>';
+  }
+  function recordLabelEdit(orgId, action, label, by, reason = '') {
+    labelHistory.push({org_id:orgId, action, label, by, reason, date:new Date().toISOString()});
+    write(LABEL_HISTORY, labelHistory);
+  }
+  function labelHistoryPanel(orgId) {
+    const entries = labelHistory.filter(item => item.org_id === orgId).slice().reverse();
+    return '<div class="panel label-history-panel"><div class="section-label"><h2>標籤編輯紀錄</h2><span class="badge">'+entries.length+' 筆</span></div>'+
+      (entries.length ? '<div class="label-history-list">'+entries.map(item => '<article class="label-history-item"><div><span class="badge '+(item.action === 'add' ? 'green' : 'amber')+'">'+(item.action === 'add' ? '新增標籤' : '刪除標籤')+'</span> <strong>'+esc(item.label)+'</strong><p class="body-copy">'+(item.action === 'delete' ? '原因：'+esc(item.reason || '未填寫') : '來源：一句話回饋')+'</p></div><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date.replace('T',' ').slice(0,16))+'</small></article>').join('')+'</div>' :
+        '<p class="body-copy">還沒有標籤編輯紀錄。新增或移除標籤後，這裡會留下可追溯的紀錄。</p>')+'</div>';
+  }
   function engineReady() {
     if (!window.Engine || !data) { toast(!data ? '組織資料尚未載入，請確認資料檔已準備好。' : '媒合功能尚未載入；請等媒合檔準備好後重新整理。'); return false; }
     return true;
@@ -50,10 +69,10 @@
     try { return action(); } catch (error) { console.error(error); toast('這次處理未完成，請確認條件後再試一次。'); }
   }
   function heading(num, title, subtitle, right = '') {
-    return '<div class="page-heading"><div><div class="eyebrow">'+num+' / 為計畫找對的組織</div><h1>'+title+'</h1><p class="subtitle">'+subtitle+'</p></div>'+right+'</div>';
+    return '<div class="page-heading"><div><h1>'+title+'</h1><p class="subtitle">'+subtitle+'</p></div>'+right+'</div>';
   }
   function empty(title, text, action = 'back-input', button = '回到需求輸入') {
-    return '<div class="empty"><div class="empty-icon" aria-hidden="true">✳</div><h2>'+esc(title)+'</h2><p>'+esc(text)+'</p><button class="primary" data-action="'+action+'">'+esc(button)+'</button></div>';
+    return '<div class="empty"><h2>'+esc(title)+'</h2><p>'+esc(text)+'</p><button class="primary" data-action="'+action+'">'+esc(button)+'</button></div>';
   }
   function go(step) {
     state.step = Number(step);
@@ -62,8 +81,13 @@
     if (state.step === 4) renderFeedback();
     if (state.step === 5) renderPrompt();
     document.querySelectorAll('.page').forEach((el, i) => { el.hidden = i + 1 !== state.step; });
+    if (state.step !== 3) {
+      $('#step-3').classList.remove('side-detail-open');
+      document.body.classList.remove('inline-detail-open');
+    }
+    const navStep = state.step === 1 ? 1 : state.step === 5 ? 5 : 2;
     document.querySelectorAll('[data-step]').forEach(el => {
-      const active = Number(el.dataset.step) === state.step;
+      const active = Number(el.dataset.step) === navStep;
       el.classList.toggle('active', active);
       if (active) el.setAttribute('aria-current', 'step'); else el.removeAttribute('aria-current');
     });
@@ -78,8 +102,71 @@
   }
   function renderInput() {
     $('#step-1').innerHTML = heading('01', '下一個好合作，從一句話開始', '說說這次計畫想找誰，我們一起把合適的組織找出來。') +
-      '<div class="intake-layout"><div><div class="panel intake-panel"><div class="section-label"><span class="number">A</span><h2>這次，想找什麼樣的夥伴？</h2></div><label class="muted" for="sentence">把企業或計畫的一句話需求貼進來</label><textarea id="sentence" class="sentence" placeholder="例如：想找五家北部的兒少組織做行銷陪跑，希望願意嘗試新做法，也能固定回覆作業。">'+esc(state.sentence)+'</textarea><div class="input-footer"><small class="muted">不用先想好條件，照平常說話的方式寫就好。</small><button class="primary" data-action="parse">轉成條件 <span aria-hidden="true">↗</span></button></div><p class="example-label">還沒想好？用一個常見需求開始</p><div class="examples">'+demands.map((d, i) => '<button data-demand="'+i+'">'+esc(d.title)+' <span aria-hidden="true">↗</span></button>').join('')+'</div></div><div id="conditions-form"></div></div><aside class="guide"><div class="guide-symbol" aria-hidden="true">✳</div><h3>少一點翻找，<br>多一點理解。</h3><p>把散落的接觸紀錄接起來，讓你的下一通電話，有更好的起點。</p><ol><li>需求轉成條件，隨時能調整</li><li>每個推薦，都找得到原始依據</li><li>留下回饋，讓團隊接著做</li></ol><div class="guide-note">系統整理線索，<br>你決定誰最適合這次計畫。</div></aside></div>';
+      '<div class="intake-layout"><div><div class="panel intake-panel"><div class="section-label"><h2>這次，想找什麼樣的夥伴？</h2></div><label class="muted" for="sentence">把企業或計畫的一句話需求貼進來</label><div class="composer" data-role="composer"><div class="composer-drop-hint">放開以附加檔案</div><div class="composer-chips" data-role="chips"></div><textarea id="sentence" data-role="text" placeholder="輸入需求，或附加檔案…">'+esc(state.sentence)+'</textarea><div class="composer-bar"><input type="file" data-role="file" multiple hidden accept="image/*,.pdf,.txt,.md,.csv,.doc,.docx,.xls,.xlsx,.zip"><button class="composer-attach" data-role="attach" type="button">附加檔案</button><span class="composer-count" data-role="count"></span><button class="composer-send" data-role="send" type="button" aria-label="送出" disabled>↑</button></div></div><div class="input-footer"><small class="muted">不用先想好條件，照平常說話的方式寫就好。</small><button class="primary" data-action="parse">轉成條件</button></div><p class="example-label">還沒想好？用一個常見需求開始</p><div class="examples">'+demands.map((d, i) => '<button data-demand="'+i+'">'+esc(d.title)+'</button>').join('')+'</div></div><div id="conditions-form"></div></div><aside class="guide"><div class="guide-symbol">工作原則</div><h3>少一點翻找，<br>多一點理解。</h3><p>把散落的接觸紀錄接起來，讓你的下一通電話，有更好的起點。</p><ol><li>需求轉成條件，隨時能調整</li><li>每個推薦，都找得到原始依據</li><li>留下回饋，讓團隊接著做</li></ol><div class="guide-note">系統整理線索，<br>你決定誰最適合這次計畫。</div></aside></div>';
+    initComposer($('#step-1 [data-role="composer"]'));
     renderConditions();
+  }
+  function initComposer(root) {
+    if (!root) return;
+    const maxFiles = 5, maxSize = 10 * 1024 * 1024;
+    const allowed = /^(image\/|application\/pdf|text\/|application\/(msword|vnd\.openxmlformats|vnd\.ms-excel|zip|x-zip))/;
+    const allowedExt = /\.(pdf|txt|md|csv|docx?|xlsx?|zip|png|jpe?g|gif|webp|svg|heic)$/i;
+    const text = root.querySelector('[data-role="text"]');
+    const input = root.querySelector('[data-role="file"]');
+    const chips = root.querySelector('[data-role="chips"]');
+    const count = root.querySelector('[data-role="count"]');
+    const send = root.querySelector('[data-role="send"]');
+    let files = [];
+    let dragDepth = 0;
+    const size = bytes => bytes < 1024 ? bytes+' B' : bytes < 1048576 ? (bytes/1024).toFixed(1)+' KB' : (bytes/1048576).toFixed(1)+' MB';
+    const showError = message => toast(message);
+    function render() {
+      chips.replaceChildren(...files.map((item, index) => {
+        const chip = document.createElement('div'); chip.className = 'composer-chip';
+        const name = document.createElement('span'); name.className = 'composer-name'; name.textContent = item.file.name;
+        const meta = document.createElement('small'); meta.textContent = size(item.file.size);
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'composer-remove'; remove.textContent = '×'; remove.setAttribute('aria-label', '移除 '+item.file.name); remove.dataset.index = index;
+        chip.append(name, meta, remove); return chip;
+      }));
+      count.textContent = files.length ? files.length+'/'+maxFiles : '';
+      send.disabled = !text.value.trim() && !files.length;
+    }
+    function addFiles(list) {
+      const errors = [];
+      for (const file of list) {
+        if (files.length >= maxFiles) { errors.push('最多只能附加 '+maxFiles+' 個檔案'); break; }
+        if (!allowed.test(file.type) && !allowedExt.test(file.name)) { errors.push('「'+file.name+'」格式不支援'); continue; }
+        if (file.size > maxSize) { errors.push('「'+file.name+'」超過 10.0 MB'); continue; }
+        if (!files.some(item => item.file.name === file.name && item.file.size === file.size)) files.push({file});
+      }
+      if (errors.length) showError(errors.join('；'));
+      render();
+    }
+    root.querySelector('[data-role="attach"]').addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+    chips.addEventListener('click', event => {
+      const button = event.target.closest('.composer-remove'); if (!button) return;
+      files.splice(Number(button.dataset.index), 1); render();
+    });
+    text.addEventListener('input', render);
+    text.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send.click(); }
+    });
+    text.addEventListener('paste', event => {
+      const pasted = [...(event.clipboardData?.files || [])];
+      if (pasted.length) { event.preventDefault(); addFiles(pasted); }
+    });
+    root.addEventListener('dragenter', event => { event.preventDefault(); dragDepth++; root.classList.add('is-dragging'); });
+    root.addEventListener('dragover', event => event.preventDefault());
+    root.addEventListener('dragleave', event => { event.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; root.classList.remove('is-dragging'); } });
+    root.addEventListener('drop', event => { event.preventDefault(); dragDepth = 0; root.classList.remove('is-dragging'); addFiles(event.dataTransfer.files); });
+    send.addEventListener('click', () => {
+      if (send.disabled) return;
+      console.log('送出：', text.value.trim(), files.map(item => item.file));
+      toast('已送出示範內容（目前只記錄在 console）。');
+      files = []; text.value = ''; render();
+    });
+    render();
   }
   function readableMatch(text) {
     return String(text).replace(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g, fragment => {
@@ -96,16 +183,16 @@
     if (!c) { el.innerHTML = ''; return; }
     const hard = c.hard || {};
     const extraFields = Object.keys(settings.hard_fields || {}).filter(f => !['議題','區域','全職人數'].includes(f));
-    el.innerHTML = '<div class="panel conditions-panel"><div class="section-label"><span class="number">B</span><h2>確認這次的媒合條件</h2></div><p class="body-copy">這是第一版條件，你可以依照計畫需要再調整。</p>'+ (arr(c._matched).length ? '<div class="notice matched">系統從你的句子讀到：'+arr(c._matched).map(readableMatch).map(esc).join('；')+'</div>' : '')+
+    el.innerHTML = '<div class="panel conditions-panel"><div class="section-label"><h2>確認這次的媒合條件</h2></div><p class="body-copy">這是第一版條件，你可以依照計畫需要再調整。</p>'+ (arr(c._matched).length ? '<div class="notice matched">系統從你的句子讀到：'+arr(c._matched).map(readableMatch).map(esc).join('；')+'</div>' : '')+
       '<div class="form-row"><div class="form-label">這次是什麼計畫？</div><div class="segments">'+Object.entries(scenarioCopy).map(([name, text]) => '<button type="button" class="'+(c.scenario === name ? 'selected' : '')+'" data-scenario="'+esc(name)+'" aria-pressed="'+(c.scenario === name)+'"><strong>'+name+'</strong><small>'+text+'</small></button>').join('')+'</div></div>'+
       '<div class="form-row"><div class="form-label">先找幾家候選？</div><div class="inline-fields"><label>需要 <input id="need-n" type="number" min="1" max="999" value="'+esc(c.need_n)+'"> 家</label><label>候選倍數 <input id="multiplier" type="number" min="1" max="20" value="'+esc(c.multiplier)+'"> 倍</label><span class="estimate" id="estimate">將列出 '+esc(c.need_n * c.multiplier)+' 家候選</span></div></div>'+
       '<div class="form-row"><div class="form-label">議題 <small>可複選；不選代表不限</small></div>'+chipGroup('議題', optionsFor('議題'), hard['議題'])+'</div>'+
       '<div class="form-row"><div class="form-label">區域 <small>可複選；不選代表不限</small></div>'+chipGroup('區域', optionsFor('區域'), hard['區域'])+'</div>'+
-      '<div class="form-row"><div class="form-label">全職人數 <small>留空代表不限</small></div><div class="inline-fields"><label>最少 <input id="staff-min" type="number" min="0" value="'+esc(hard['全職人數']?.min)+'"> 人</label><span>—</span><label>最多 <input id="staff-max" type="number" min="0" value="'+esc(hard['全職人數']?.max)+'"> 人</label></div></div>'+
+      '<details class="advanced-conditions"><summary>調整更多條件</summary><div class="form-row"><div class="form-label">全職人數 <small>留空代表不限</small></div><div class="inline-fields"><label>最少 <input id="staff-min" type="number" min="0" value="'+esc(hard['全職人數']?.min)+'"> 人</label><span>—</span><label>最多 <input id="staff-max" type="number" min="0" value="'+esc(hard['全職人數']?.max)+'"> 人</label></div></div>'+
       '<div class="form-row"><div class="form-label">希望組織具備的特質 <small>加分條件，沒有符合也會保留考量</small></div><div class="chips">'+softEntries.map(([name, item]) => '<button type="button" title="'+esc(item.explain)+'" class="chip '+(arr(c.soft).includes(name) ? 'selected' : '')+'" data-chip="soft" data-value="'+esc(name)+'" aria-pressed="'+arr(c.soft).includes(name)+'">'+esc(name)+'</button>').join('')+'</div><div class="explanations">'+softEntries.filter(([name]) => arr(c.soft).includes(name)).map(([name, item]) => '<span>'+esc(name)+'：'+esc(item.explain)+'</span>').join('')+'</div></div>'+
       '<div class="form-row"><label class="switch"><input id="exclude-partner" type="checkbox" '+(c.exclude_recent_partner ? 'checked' : '')+'><span>排除近一年合作過的</span></label><p class="body-copy">近一年已陪跑或獎補助合作的組織，先留給下一次機會。</p></div>'+
-      '<details class="form-row"><summary>其他條件與放寬順序</summary>'+extraFields.map(field => '<div class="form-row"><div class="form-label">'+esc(field)+'</div>'+chipGroup(field, optionsFor(field), hard[field])+'</div>').join('')+'<label for="relax-order">名單不足時，依序放寬</label><select id="relax-order">'+['區域,全職人數,議題','全職人數,區域,議題','議題,區域,全職人數'].map(value => '<option value="'+value+'" '+(arr(c.relax_order).join(',') === value ? 'selected' : '')+'>'+value.replaceAll(',', ' → ')+'</option>').join('')+'</select></details>'+
-      '<div class="actions"><span class="muted">先有一份名單，再用你的經驗選出好夥伴。</span><button class="primary" data-action="rank">產生候選名單 →</button></div></div>';
+      '<div class="form-row"><div class="form-label">其他條件</div>'+extraFields.map(field => '<div class="form-row"><div class="form-label">'+esc(field)+'</div>'+chipGroup(field, optionsFor(field), hard[field])+'</div>').join('')+'<label for="relax-order">名單不足時，依序放寬</label><select id="relax-order">'+['區域,全職人數,議題','全職人數,區域,議題','議題,區域,全職人數'].map(value => '<option value="'+value+'" '+(arr(c.relax_order).join(',') === value ? 'selected' : '')+'>'+value.replaceAll(',', ' → ')+'</option>').join('')+'</select></div></details>'+
+      '<div class="actions"><span class="muted">先有一份名單，再用你的經驗選出好夥伴。</span><button class="primary" data-action="rank">產生候選名單</button></div></div>';
   }
   function collectConditions() {
     if (!state.conditions) return null;
@@ -148,13 +235,14 @@
     const score = Number(c.score) || 0;
     const scoreWidth = Math.max(0, Math.min(100, score / maxScore * 100));
     const tagFields = ['議題', '區域', '全職人數', '會籍'];
-    return '<article class="candidate '+(demoted ? 'demoted' : '')+'" data-candidate="'+esc(c.org_id)+'"><div class="candidate-top"><div class="candidate-identity"><span class="rank">'+String(i + 1).padStart(2, '0')+'</span><div><h2>'+esc(c.name)+'</h2><div class="org-tags">'+tagFields.map(key => '<span class="badge">'+esc(display(f[key]))+(key === '全職人數' && f[key] != null ? ' 人' : '')+'</span>').join('')+(c.hard_status === 'relaxed' ? '<span class="badge amber">放寬後納入</span>' : '')+(c.hard_status === 'missing' || arr(c.missing_fields).length ? '<span class="badge amber">資料缺：'+arr(c.missing_fields).map(esc).join('、')+'</span>' : '')+'</div></div></div><div class="score"><small>媒合分數</small><strong>'+esc(Math.round(score * 10) / 10)+'</strong><div class="score-track" role="img" aria-label="媒合分數 '+score+'"><span style="width:'+scoreWidth+'%"></span></div><small>依本次條件排序</small></div></div><div class="candidate-body">'+
-      reasonColumn('✓ 為什麼推薦', arr(c.reasons), '', c.org_id, '符合目前條件，可進一步認識。')+
-      reasonColumn('⚠ 要注意什麼', arr(c.warnings), 'warning', c.org_id, '目前沒有明確警訊，仍建議電訪確認。')+
-      reasonColumn('☎ 電訪先關心什麼', arr(c.call_questions), 'call', c.org_id, '確認參與意願、可投入人力與期待。')+'</div>'+
-      (arr(c.soft_matched).length ? '<div class="soft-matches">'+arr(c.soft_matched).map(s => '<span class="badge '+(s.delta < 0 ? 'amber' : 'green')+'" title="'+esc(s.explain)+'">'+(s.delta < 0 ? '⚠ ' : '✓ ')+esc(s.name)+'</span>').join('')+'</div>' : '')+
-      '<div class="candidate-footer"><div class="feedback-actions"><span>你的判斷，讓名單更貼近現場</span><button class="small-button '+(latest?.verdict === '符合' ? 'secondary' : '')+'" data-verdict="符合" data-org="'+esc(c.org_id)+'">✓ 符合</button><button class="small-button" data-verdict="不符合" data-org="'+esc(c.org_id)+'">不符合</button></div><button class="text-button small-button" data-detail="'+esc(c.org_id)+'">看組織詳情 ↗</button></div>'+
-      (latest ? '<div class="feedback-note"><span>'+(latest.verdict === '符合' ? '✓ PM 認為符合這次需求' : 'PM 判斷不符合 · '+esc(latest.reason_code || '其他'))+(latest.note ? '：'+esc(latest.note) : '')+(demoted ? ' · 已移至名單最後' : '')+'</span><button class="text-button small-button" data-undo="'+esc(c.org_id)+'">撤回</button></div>' : '')+'</article>';
+    const reasons = arr(c.reasons), warnings = arr(c.warnings), calls = arr(c.call_questions);
+    return '<article class="candidate '+(demoted ? 'demoted' : '')+'" data-candidate="'+esc(c.org_id)+'"><div class="candidate-top"><div class="candidate-identity"><span class="rank">'+String(i + 1).padStart(2, '0')+'</span><div><h2>'+esc(c.name)+'</h2><div class="org-tags">'+tagFields.map(key => '<span class="badge">'+esc(display(f[key]))+(key === '全職人數' && f[key] != null ? ' 人' : '')+'</span>').join('')+(c.hard_status === 'relaxed' ? '<span class="badge amber">放寬後納入</span>' : '')+(c.hard_status === 'missing' || arr(c.missing_fields).length ? '<span class="badge amber">資料缺：'+arr(c.missing_fields).map(esc).join('、')+'</span>' : '')+'</div></div></div><div class="score"><small>排序摘要</small><strong>符合 '+reasons.length+' 項</strong><span class="score-detail">'+(warnings.length ? '待確認 '+warnings.length+' 項' : '目前沒有明確警訊')+'</span><div class="score-track" role="img" aria-label="符合 '+reasons.length+' 項條件"><span style="width:'+scoreWidth+'%"></span></div></div></div><details class="candidate-evidence"><summary>查看推薦依據、待確認與電訪問題</summary><div class="candidate-body">'+
+      reasonColumn('推薦依據', reasons, '', c.org_id, '符合目前條件，可進一步認識。')+
+      reasonColumn('待確認', warnings, 'warning', c.org_id, '目前沒有明確警訊，仍建議電訪確認。')+
+      reasonColumn('電訪問題', calls, 'call', c.org_id, '確認參與意願、可投入人力與期待。')+'</div></details>'+
+      (arr(c.soft_matched).length ? '<div class="soft-matches">'+arr(c.soft_matched).map(s => '<span class="badge '+(s.delta < 0 ? 'amber' : 'green')+'" title="'+esc(s.explain)+'">'+esc(s.name)+'</span>').join('')+'</div>' : '')+
+      '<div class="candidate-footer"><div class="feedback-actions"><span>你的判斷，讓名單更貼近現場</span><button class="small-button '+(latest?.verdict === '符合' ? 'secondary' : '')+'" data-verdict="符合" data-org="'+esc(c.org_id)+'">符合</button><button class="small-button" data-verdict="不符合" data-org="'+esc(c.org_id)+'">不符合</button></div><button class="secondary small-button" data-detail="'+esc(c.org_id)+'">查看組織脈絡</button></div>'+
+      (latest ? '<div class="feedback-note"><span>'+(latest.verdict === '符合' ? 'PM 認為符合這次需求' : 'PM 判斷不符合 · '+esc(latest.reason_code || '其他'))+(latest.note ? '：'+esc(latest.note) : '')+(demoted ? ' · 已移至名單最後' : '')+'</span><button class="text-button small-button" data-undo="'+esc(c.org_id)+'">撤回</button></div>' : '')+'</article>';
   }
   function renderResults() {
     const el = $('#step-2');
@@ -162,14 +250,46 @@
     const r = state.result, candidates = arr(r.candidates);
     const maxScore = Math.max(1, ...candidates.map(c => Number(c.score) || 0));
     const disabled = arr(r.disabled_rules);
-    el.innerHTML = heading('02', '這些組織，值得先聊聊', '依「'+esc(state.conditions.scenario)+'」情境，從 '+orgs.length+' 家找出 '+candidates.length+' 家候選', '<div class="result-metrics"><div class="metric-pill"><b>'+candidates.length+'</b>候選組織</div><button class="secondary" data-step="5">產生推薦提示詞 ↗</button></div>')+
+    el.innerHTML = heading('02', '這些組織，值得先聊聊', '先在這個工作區比較、查看依據，再留下本次媒合判斷。', '<div class="result-metrics"><div class="metric-pill"><b>'+candidates.length+'</b>候選組織</div><button class="secondary" data-step="5">選用 AI 整理工具</button></div>')+
       (arr(r.relaxed).length ? '<div class="notice">名單不足，已自動放寬：'+r.relaxed.map(item => esc(item.field)+'（原本：'+esc(typeof item.original === 'object' && !Array.isArray(item.original) ? Object.entries(item.original || {}).map(([key,value]) => (key === 'min' ? '最少' : key === 'max' ? '最多' : key)+display(value)).join('、') : display(item.original))+'）'+(item.note ? ' · '+esc(item.note) : '')).join('；')+'</div>' : '')+
       (disabled.length ? '<details class="notice warning"><summary>有 '+disabled.length+' 條規則因資料缺欄位停用</summary>'+disabled.map(d => '<p>'+esc(d.id)+'：'+esc(d.reason)+'</p>').join('')+'</details>' : '')+
-      '<div class="results-tools"><span>先看推薦理由，再用現場經驗確認。分數只協助排序。</span><button class="text-button" data-step="1">← 調整條件</button></div>'+
+      '<div class="results-tools"><span>先看推薦理由，再用現場經驗確認。分數只協助排序。</span><button class="text-button" data-step="1"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>調整條件</button></div>'+
       (arr(r.excluded).length ? '<details class="notice"><summary>已排除 '+r.excluded.length+' 家'+(state.conditions.exclude_recent_partner ? '（近一年合作過）' : '')+'</summary>'+r.excluded.map(x => '<p>'+esc(x.name)+' · '+esc(x.reason)+'</p>').join('')+'</details>' : '')+
-      (candidates.length ? '<div id="candidate-list">'+candidates.map((c, i) => candidateCard(c,i,maxScore)).join('')+'</div><div class="actions"><span class="muted">已留下 '+feedback.length+' 筆團隊回饋</span><button class="secondary" data-step="4">查看第二輪回饋 →</button></div>' : empty('沒有符合的組織，試試放寬條件', '可以減少議題或區域限制，再試一次。'));
+      (candidates.length ? '<div id="candidate-list">'+candidates.map((c, i) => candidateCard(c,i,maxScore)).join('')+'</div>'+feedbackWorkspace() : empty('沒有符合的組織，試試放寬條件', '可以減少議題或區域限制，再試一次。'));
   }
-  function selectOrg(id, record = null) { state.selected = id; state.focusRecord = record; go(3); }
+
+  function feedbackWorkspace() {
+    const entries = feedback.slice().reverse();
+    return '<details class="workspace-feedback"><summary>團隊決策清單 <span class="badge green">'+feedback.length+' 筆</span></summary>'+
+      '<div class="workspace-feedback-body"><p class="body-copy">逐家確認要保留或暫不邀請，並指定名單最先呈現的推薦標籤。</p>'+
+      (entries.length ? '<div class="feedback-inline-list">'+entries.map(item => '<div class="feedback-inline-item decision-item"><div><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><p>首要呈現：'+esc(item.primary_label || '尚未指定')+(item.tags?.length ? ' · 新增標籤：'+esc(arr(item.tags).join('、')) : '')+'</p></div><button class="text-button danger" data-undo="'+esc(item.org_id)+'">撤回</button></div>').join('')+'</div>' : '<p class="muted">尚未留下決策，先在候選卡上選擇「符合」或「不符合」。</p>')+
+      '</div></details>';
+  }
+  function selectOrg(id, record = null) {
+    state.selected = id; state.focusRecord = record;
+    if (state.step === 2) {
+      renderDetail();
+      $('#step-3').hidden = false;
+      $('#step-3').classList.add('side-detail-open');
+      document.body.classList.add('inline-detail-open');
+      return;
+    }
+    go(3);
+  }
+  function closeInlineDetail() {
+    const scrollY = window.scrollY;
+    $('#step-3').hidden = true;
+    $('#step-3').classList.remove('side-detail-open');
+    document.body.classList.remove('inline-detail-open');
+    window.scrollTo({top:scrollY, behavior:'auto'});
+  }
+  function labelReview(org) {
+    const overallKey = org.id+'|overall';
+    const overall = votes[overallKey];
+    const note = votes[org.id+'|note'] || '';
+    const details = overall === 'disagree' ? '<div class="label-review-details"><p class="body-copy">請只勾選你覺得不對的判讀，再留一句話。</p><div class="label-review-list">'+arr(org.hits).map(hit => '<label><input type="checkbox" data-label-rule="'+esc(hit.rule)+'" data-label-name="'+esc(hit.label)+'" '+(votes[org.id+'|'+hit.rule] === 'disagree' ? 'checked' : '')+'> <span>'+esc(hit.label)+' <small class="rule">'+esc(hit.rule)+'</small></span></label>').join('')+'</div><label for="label-review-by">編輯人</label><select id="label-review-by">'+personOptions()+'</select><label for="label-review-note">刪除原因</label><textarea id="label-review-note" maxlength="500" placeholder="例如：這個標籤只代表一位窗口的想法，還不能代表整個組織。">'+esc(note)+'</textarea><div class="actions"><button type="button" class="primary" data-action="save-label-review">記下這次確認</button></div></div>' : '';
+    return '<div class="label-review"><div class="label-review-heading"><div><strong>這個判讀對嗎？</strong><p class="body-copy">不用逐條回覆；只有不對的地方才需要標出來。</p></div><div class="label-review-actions"><button type="button" class="small-button '+(overall === 'agree' ? 'secondary' : '')+'" data-label-review="agree" aria-pressed="'+(overall === 'agree')+'">大致正確</button><button type="button" class="small-button '+(overall === 'disagree' ? 'secondary' : '')+'" data-label-review="disagree" aria-pressed="'+(overall === 'disagree')+'">有不對的地方</button></div></div>'+details+(overall === 'agree' ? '<p class="label-review-saved">已記下：整體判讀大致正確</p>' : '')+'</div>';
+  }
   function renderDetail() {
     const el = $('#step-3');
     if (!state.selected) { el.innerHTML = heading('03', '理解組織，讓邀請更到位', '選一個組織，看看它一路走來的脈絡。')+empty('想先認識哪一家？', '從候選名單點選「看組織詳情」，或從下方選擇組織。', 'back-results', '回到候選名單')+'<div class="panel" style="margin-top:20px"><label for="org-picker">選擇組織</label>'+orgPicker()+'</div>'; return; }
@@ -178,8 +298,18 @@
     const stats = org.stats || {};
     const cited = new Set(arr(org.hits).flatMap(h => arr(h.evidence).map(e => e.record_id)));
     const orgFeedback = feedback.filter(f => f.org_id === org.id);
-    el.innerHTML = heading('03', esc(org.name), '把欄位、接觸紀錄與團隊經驗放在一起，邀請前多理解一點。', '<button class="secondary" data-step="2">← 回候選名單</button>')+
-      '<div class="detail-layout"><div class="detail-main"><div class="panel summary-card"><div class="eyebrow">先看重點，再看脈絡</div><h2>30 秒摘要</h2><ul>'+arr(org.summary_30s).map(s => '<li>'+esc(s)+'</li>').join('')+'</ul></div><div class="panel"><h2>系統判讀的標籤</h2><p class="body-copy">這個判讀符合你認識的組織嗎？點開依據，再留下你的確認。</p>'+ (arr(org.hits).length ? org.hits.map((hit, i) => '<article class="hit"><div class="hit-top"><div><span class="badge '+(hit.kind === 'warning' ? 'amber' : 'green')+'">'+esc(hit.label)+'</span><span class="rule">'+esc(hit.rule)+'</span></div><small class="muted">'+esc({ai:'AI 讀文字',keyword:'關鍵字',structured:'結構化欄位'}[hit.method] || '資料判讀')+'</small></div><div>'+evidenceButtons(hit.evidence, org.id)+'</div><div class="vote-actions"><button class="small-button" data-vote="agree" data-hit="'+i+'" aria-pressed="'+(votes[org.id+'|'+hit.rule] === 'agree')+'">認同</button><button class="small-button" data-vote="disagree" data-hit="'+i+'" aria-pressed="'+(votes[org.id+'|'+hit.rule] === 'disagree')+'">不認同</button>'+(votes[org.id+'|'+hit.rule] ? '<small class="muted">已記下你的確認</small>' : '')+'</div></article>').join('') : '<p class="body-copy">目前還沒有足夠資料產生標籤。</p>')+'</div><div class="panel"><h2>一路走來的接觸紀錄</h2><p class="body-copy">新到舊排列 · <span class="badge green">接觸紀錄</span> <span class="badge amber">顧問筆記</span></p><div class="timeline">'+arr(org.timeline).slice().sort((a,b) => String(b.date || '').localeCompare(String(a.date || ''))).map(t => '<article id="record-'+esc(t.id)+'" class="timeline-item '+(t.kind === 'note' ? 'note' : '')+(state.focusRecord === t.id ? ' highlight' : '')+'"><time>'+esc(t.date || '日期未提供')+'</time> <span class="badge '+(t.kind === 'note' ? 'amber' : 'green')+'">'+esc(t.type || (t.kind === 'note' ? '顧問筆記' : '接觸紀錄'))+'</span> '+(cited.has(t.id) ? '<span class="badge">已引用為依據</span>' : '')+'<h3>'+esc(t.activity || t.type)+'</h3><p>'+esc(t.text)+'</p><small class="muted">'+esc(t.source || '來源未提供')+' · '+esc(t.id)+'</small></article>').join('')+'</div></div></div><aside class="detail-side"><div class="panel"><h2>組織基本資料</h2><dl class="field-grid">'+Object.entries(org.fields || {}).map(([key, value]) => '<div><dt>'+esc(key)+'</dt><dd class="'+(value == null || value === '' ? 'missing' : '')+'">'+esc(display(value))+'</dd></div>').join('')+'</dl></div><div class="panel"><h2>接觸足跡</h2><div class="stat-cards"><div><b>'+esc(stats.contacts ?? 0)+'</b><small>接觸紀錄</small></div><div><b>'+esc(stats.notes ?? 0)+'</b><small>顧問筆記</small></div></div><small class="muted">最近接觸日</small><p>'+esc(stats.last_contact || '尚無紀錄')+'</p><div class="inline-list">'+Object.entries(stats.by_type || {}).map(([type, n]) => '<span>'+esc(type)+' '+esc(n)+' 次</span>').join('')+'</div><p class="body-copy">資料來源系統</p><div class="org-tags">'+arr(stats.sources || [...new Set(arr(org.timeline).map(t => t.source).filter(Boolean))]).map(s => '<span class="badge">'+esc(s)+'</span>').join('')+'</div></div><div class="panel"><h2>這家的 PM 回饋</h2>'+ (orgFeedback.length ? orgFeedback.map(f => '<div class="hit"><span class="badge '+(f.verdict === '符合' ? 'green' : 'amber')+'">'+esc(f.verdict)+'</span> <small>'+esc(f.reason_code)+'</small><p>'+esc(f.note || '未填寫備註')+'</p><small class="muted">'+esc(f.date)+' · '+esc(f.by || 'PM')+'</small></div>').join('') : '<p class="body-copy">還沒有回饋。你的判斷會留在這家組織的脈絡裡。</p>')+'</div></aside></div>';
+    const detailClose = state.step === 2
+      ? '<button class="secondary" data-action="close-inline-detail">關閉</button>'
+      : '<button class="secondary" data-step="2"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>回候選名單</button>';
+    el.innerHTML = heading('03', esc(org.name), '把欄位、接觸紀錄與團隊經驗放在一起，邀請前多理解一點。', detailClose)+
+      '<div class="detail-layout"><div class="detail-main"><div class="panel summary-card"><h2>30 秒摘要</h2><ul>'+arr(org.summary_30s).map(s => '<li>'+esc(s)+'</li>').join('')+'</ul></div><div class="panel"><h2>系統判讀的標籤</h2><p class="body-copy">這個判讀符合你認識的組織嗎？點開依據，再留下你的確認。</p>'+ (arr(org.hits).length ? org.hits.map((hit, i) => '<article class="hit"><div class="hit-top"><div><span class="badge '+(hit.kind === 'warning' ? 'amber' : 'green')+'">'+esc(hit.label)+'</span><span class="rule">'+esc(hit.rule)+'</span></div><small class="muted">'+esc({ai:'AI 讀文字',keyword:'關鍵字',structured:'結構化欄位'}[hit.method] || '資料判讀')+'</small></div><div>'+evidenceButtons(hit.evidence, org.id)+'</div><div class="vote-actions"><button class="small-button" data-vote="agree" data-hit="'+i+'" aria-pressed="'+(votes[org.id+'|'+hit.rule] === 'agree')+'">認同</button><button class="small-button" data-vote="disagree" data-hit="'+i+'" aria-pressed="'+(votes[org.id+'|'+hit.rule] === 'disagree')+'">不認同</button>'+(votes[org.id+'|'+hit.rule] ? '<small class="muted">已記下你的確認</small>' : '')+'</div></article>').join('') : '<p class="body-copy">目前還沒有足夠資料產生標籤。</p>')+'</div><div class="panel"><h2>一路走來的接觸紀錄</h2><p class="body-copy">新到舊排列 · <span class="badge green">接觸紀錄</span> <span class="badge amber">顧問筆記</span></p><div class="timeline">'+arr(org.timeline).slice().sort((a,b) => String(b.date || '').localeCompare(String(a.date || ''))).map(t => '<article id="record-'+esc(t.id)+'" class="timeline-item '+(t.kind === 'note' ? 'note' : '')+(state.focusRecord === t.id ? ' highlight' : '')+'"><time>'+esc(t.date || '日期未提供')+'</time> <span class="badge '+(t.kind === 'note' ? 'amber' : 'green')+'">'+esc(t.type || (t.kind === 'note' ? '顧問筆記' : '接觸紀錄'))+'</span> '+(cited.has(t.id) ? '<span class="badge">已引用為依據</span>' : '')+'<h3>'+esc(t.activity || t.type)+'</h3><p>'+esc(t.text)+'</p><small class="muted">'+esc(t.source || '來源未提供')+' · '+esc(t.id)+'</small></article>').join('')+'</div></div></div><aside class="detail-side"><div class="panel"><h2>組織基本資料</h2><dl class="field-grid">'+Object.entries(org.fields || {}).map(([key, value]) => '<div><dt>'+esc(key)+'</dt><dd class="'+(value == null || value === '' ? 'missing' : '')+'">'+esc(display(value))+'</dd></div>').join('')+'</dl></div><div class="panel"><h2>接觸足跡</h2><div class="stat-cards"><div><b>'+esc(stats.contacts ?? 0)+'</b><small>接觸紀錄</small></div><div><b>'+esc(stats.notes ?? 0)+'</b><small>顧問筆記</small></div></div><small class="muted">最近接觸日</small><p>'+esc(stats.last_contact || '尚無紀錄')+'</p><div class="inline-list">'+Object.entries(stats.by_type || {}).map(([type, n]) => '<span>'+esc(type)+' '+esc(n)+' 次</span>').join('')+'</div><p class="body-copy">資料來源系統</p><div class="org-tags">'+arr(stats.sources || [...new Set(arr(org.timeline).map(t => t.source).filter(Boolean))]).map(s => '<span class="badge">'+esc(s)+'</span>').join('')+'</div></div><div class="panel"><h2>這家的 PM 回饋</h2>'+ (orgFeedback.length ? orgFeedback.map(f => '<div class="hit"><span class="badge '+(f.verdict === '符合' ? 'green' : 'amber')+'">'+esc(f.verdict)+'</span> <small>'+esc(arr(f.reason_code).join('、'))+'</small><p>'+esc(f.note || '未填寫備註')+'</p><small class="muted">'+esc(f.date)+' · 判斷人：'+esc(f.by || 'PM')+'</small></div>').join('') : '<p class="body-copy">還沒有回饋。你的判斷會留在這家組織的脈絡裡。</p>')+'</div>'+labelHistoryPanel(org.id)+'</aside></div>';
+    const labelPanel = [...el.querySelectorAll('.panel')].find(panel => panel.querySelector('.hit'));
+    if (labelPanel) {
+      labelPanel.querySelectorAll('.vote-actions').forEach(actions => actions.remove());
+      const labelIntro = labelPanel.querySelector('.body-copy');
+      if (labelIntro) labelIntro.textContent = '先看依據，再一次回報整體判讀；只有不對的地方才需標出。';
+      labelPanel.insertAdjacentHTML('beforeend', labelReview(org));
+    }
     if (state.focusRecord) requestAnimationFrame(() => document.getElementById('record-'+state.focusRecord)?.scrollIntoView({block:'center',behavior:'smooth'}));
   }
   function orgPicker() {
@@ -190,38 +320,77 @@
     const el = $('#step-4');
     el.innerHTML = heading('04', '把你的經驗，留給下一位夥伴', '每一筆「符合」或「不符合」，都是團隊下次選擇的起點。')+
       '<div class="notice">回饋會寫回組織檔，下一位 PM 也看得到（資料跟著組織走）。<br><small>目前先保存在這台瀏覽器；下載並匯入共用資料後，團隊才能一起看見。</small></div>'+
-      (feedback.length ? '<div class="panel"><div class="section-label"><h2>PM 回饋紀錄</h2><span class="badge green">'+feedback.length+' 筆</span></div><div class="table-wrap feedback-table"><table><thead><tr><th>組織</th><th>判斷</th><th>原因與備註</th><th>日期</th><th>操作</th></tr></thead><tbody>'+feedback.map((f,i) => '<tr><td><button class="text-button" data-detail="'+esc(f.org_id)+'">'+esc(orgById(f.org_id)?.name || f.org_id)+'</button></td><td><span class="badge '+(f.verdict === '符合' ? 'green' : 'amber')+'">'+esc(f.verdict)+'</span></td><td>'+esc(f.reason_code || '—')+'<p class="muted">'+esc(f.note)+'</p></td><td>'+esc(f.date)+'<br><small class="muted">'+esc(f.by || 'PM')+'</small></td><td><button class="text-button danger" data-remove="'+i+'">刪除</button></td></tr>').join('')+'</tbody></table></div><div class="feedback-mobile">'+feedback.map((f,i) => '<article class="feedback-entry"><h3>'+esc(orgById(f.org_id)?.name || f.org_id)+'</h3><p><span class="badge '+(f.verdict === '符合' ? 'green' : 'amber')+'">'+esc(f.verdict)+'</span> '+esc(f.reason_code)+'</p><p>'+esc(f.note || '未填寫備註')+'</p><div class="row"><small class="muted">'+esc(f.date)+'</small><button class="text-button danger" data-remove="'+i+'">刪除</button></div></article>').join('')+'</div></div>' : empty('你的第一筆回饋，會讓名單更好', '回到候選名單，替組織標記「符合」或「不符合」。','back-results','回候選名單'))+
-      '<div class="panel"><h2>把判斷帶回團隊</h2><p class="body-copy">下載回饋檔，請負責資料的夥伴放到 data/feedback/ 資料夾，再重新整理組織資料（build）。下次打開就能接著使用。</p><div class="actions"><button class="secondary" data-action="download" '+(!feedback.length ? 'disabled' : '')+'>↓ 下載回饋檔</button><button class="primary" data-action="rerank" '+(!state.result ? 'disabled' : '')+'>依回饋重排名單 →</button></div><p class="storage-note">'+(storageAvailable ? '回饋已保存在此瀏覽器，下載檔案可交給團隊接續使用。' : '此瀏覽器無法保存回饋；關閉頁面前，請先下載回饋檔。')+'</p></div>';
+      (feedback.length ? '<div class="panel"><div class="section-label"><h2>PM 回饋紀錄</h2><span class="badge green">'+feedback.length+' 筆</span></div><div class="table-wrap feedback-table"><table><thead><tr><th>組織</th><th>判斷</th><th>原因與備註</th><th>日期</th><th>操作</th></tr></thead><tbody>'+feedback.map((f,i) => '<tr><td><button class="text-button" data-detail="'+esc(f.org_id)+'">'+esc(orgById(f.org_id)?.name || f.org_id)+'</button></td><td><span class="badge '+(f.verdict === '符合' ? 'green' : 'amber')+'">'+esc(f.verdict)+'</span></td><td>'+esc(arr(f.reason_code).join('、') || '—')+'<p class="muted">'+esc(f.note)+'</p>'+(arr(f.tags).length ? '<div class="org-tags">'+arr(f.tags).map(tag => '<span class="badge green">'+esc(tag)+'</span>').join('')+'</div>' : '')+'</td><td>'+esc(f.date)+'<br><small class="muted">'+esc(f.by || 'PM')+'</small></td><td><button class="text-button danger" data-remove="'+i+'">刪除</button></td></tr>').join('')+'</tbody></table></div><div class="feedback-mobile">'+feedback.map((f,i) => '<article class="feedback-entry"><h3>'+esc(orgById(f.org_id)?.name || f.org_id)+'</h3><p><span class="badge '+(f.verdict === '符合' ? 'green' : 'amber')+'">'+esc(f.verdict)+'</span> '+esc(arr(f.reason_code).join('、'))+'</p><p>'+esc(f.note || '未填寫備註')+'</p>'+(arr(f.tags).length ? '<div class="org-tags">'+arr(f.tags).map(tag => '<span class="badge green">'+esc(tag)+'</span>').join('')+'</div>' : '')+'<div class="row"><small class="muted">'+esc(f.date)+'</small><button class="text-button danger" data-remove="'+i+'">刪除</button></div></article>').join('')+'</div></div>' : empty('你的第一筆回饋，會讓名單更好', '回到候選名單，替組織標記「符合」或「不符合」。','back-results','回候選名單'))+
+      '<div class="panel"><h2>把判斷帶回團隊</h2><p class="body-copy">下載回饋檔，請負責資料的夥伴放到 data/feedback/ 資料夾，再重新整理組織資料（build）。下次打開就能接著使用。</p><div class="actions"><button class="secondary" data-action="download" '+(!feedback.length ? 'disabled' : '')+'><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>下載回饋檔</button><button class="primary" data-action="rerank" '+(!state.result ? 'disabled' : '')+'>依回饋重排名單 <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button></div><p class="storage-note">'+(storageAvailable ? '回饋已保存在此瀏覽器，下載檔案可交給團隊接續使用。' : '此瀏覽器無法保存回饋；關閉頁面前，請先下載回饋檔。')+'</p></div>';
   }
-  function saveFeedback(id, verdict, reason = '', note = '') {
-    const item = runEngine(() => Engine.feedbackItem(id,verdict,reason,note));
+  function saveFeedback(id, verdict, reason = '', note = '', by = 'PM', tags = [], primaryLabel = '') {
+    tags = tags.length ? tags : arr($('#feedback-dialog')?.dataset.noteTag).filter(Boolean);
+    const item = runEngine(() => Engine.feedbackItem(id,verdict,reason,note,by,tags,primaryLabel));
     if (!item) return;
     const key = feedbackKey(item);
     if (feedback.some(f => feedbackKey(f) === key)) { toast('這筆回饋已經記下了。'); return; }
     deleted.delete(key); feedback.push(item); persist();
+    tags.forEach(tag => recordLabelEdit(id, 'add', tag, by));
     if (state.result) rerank(); renderResults(); toast(verdict === '不符合' ? '已留下回饋，這家組織已移到名單最後。' : '已記下：這家組織符合本次需求。');
   }
   function openFeedback(id) {
     const dialog = $('#feedback-dialog');
-    dialog.innerHTML = '<form id="negative-form"><div class="dialog-top"><h2 id="feedback-title">哪裡不符合這次需求？</h2><button type="button" data-action="close-feedback" aria-label="關閉回饋視窗">×</button></div><p class="body-copy">'+esc(orgById(id)?.name || id)+'<br>這家會保留在名單最後，讓判斷有跡可循。</p><label for="feedback-reason">主要原因</label><select id="feedback-reason" required><option value="">請選擇原因</option>'+reasonEntries.map(([key]) => '<option value="'+esc(key)+'">'+esc(key)+'</option>').join('')+'</select><p id="reason-hint" class="body-copy"></p><label for="feedback-note">留一句話，讓同事理解你的判斷</label><textarea id="feedback-note" required maxlength="500" placeholder="例如：團隊剛換主管，先等交接穩定再邀請。"></textarea><div class="actions"><button type="button" data-action="close-feedback">先取消</button><button type="submit" class="primary">送出回饋並重排</button></div></form>';
-    dialog.dataset.org = id; dialog.showModal(); $('#feedback-reason').focus();
+    dialog.innerHTML = '<form id="negative-form"><div class="dialog-top"><h2 id="feedback-title">哪裡不符合這次需求？</h2><button type="button" data-action="close-feedback" aria-label="關閉回饋視窗"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button></div><p class="body-copy">'+esc(orgById(id)?.name || id)+'<br>這家會保留在名單最後，讓判斷有跡可循。</p><label for="feedback-by">留言人</label><select id="feedback-by" required><option value="">請選擇留言人</option>'+personOptions()+'</select><div id="new-person-entry" class="new-person-entry" hidden><label for="new-feedback-person">新留言人姓名</label><div class="inline-fields"><input id="new-feedback-person" maxlength="30" placeholder="例如：王小明"><button type="button" class="secondary small-button" data-person-action="cancel">取消</button><button type="button" class="primary small-button" data-person-action="add">加入</button></div></div><fieldset class="feedback-reason-field"><legend>主要原因 <small>可複選</small></legend><div class="feedback-reasons" role="group" aria-label="主要原因">'+reasonEntries.map(([key, item]) => '<button type="button" class="chip feedback-reason-chip" data-feedback-reason="'+esc(key)+'" aria-pressed="false" title="'+esc(item.hint || '')+'">'+esc(key)+'</button>').join('')+'</div><p id="reason-hint" class="body-copy"></p></fieldset><label for="feedback-note">留一句話，讓同事理解你的判斷</label><textarea id="feedback-note" required maxlength="500" placeholder="例如：團隊剛換主管，先等交接穩定再邀請。"></textarea><div id="note-tag-prompt" class="note-tag-prompt" hidden aria-live="polite"></div><div class="actions"><button type="button" data-action="close-feedback">先取消</button><button type="submit" class="primary">送出回饋並重排</button></div></form>';
+    dialog.dataset.org = id; dialog.dataset.noteTag = ''; dialog.showModal(); $('#feedback-by').focus();
+  }
+  function openPositiveFeedback(id) {
+    const dialog = $('#feedback-dialog');
+    const org = orgById(id);
+    const labels = arr(org?.hits);
+    dialog.innerHTML = '<form id="positive-form"><div class="dialog-top"><h2 id="feedback-title">為什麼要保留這家？</h2><button type="button" data-action="close-feedback" aria-label="關閉回饋視窗"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button></div><p class="body-copy">'+esc(org?.name || id)+'<br>請指定名單最先呈現的推薦標籤，讓下一位夥伴先看到重點。</p><label for="feedback-by">留言人</label><select id="feedback-by" required><option value="">請選擇留言人</option>'+personOptions()+'</select><div id="new-person-entry" class="new-person-entry" hidden><label for="new-feedback-person">新留言人姓名</label><div class="inline-fields"><input id="new-feedback-person" maxlength="30" placeholder="例如：王小明"><button type="button" class="secondary small-button" data-person-action="cancel">取消</button><button type="button" class="primary small-button" data-person-action="add">加入</button></div></div><label for="positive-label">主要參考的推薦標籤</label><select id="positive-label" required><option value="">請選擇一項推薦標籤</option>'+labels.map(hit => '<option value="'+esc(hit.label)+'">'+esc(hit.label)+'</option>').join('')+'</select><label for="positive-tag">想新增的標籤 <small>選填</small></label><input id="positive-tag" maxlength="80" placeholder="例如：適合第一批合作"><label for="positive-note">補充一句話 <small>選填</small></label><textarea id="positive-note" maxlength="500" placeholder="例如：主管願意親自參與，適合先邀請。"></textarea><div class="actions"><button type="button" data-action="close-feedback">先取消</button><button type="submit" class="primary">加入「要」清單</button></div></form>';
+    dialog.dataset.org = id; dialog.dataset.noteTag = ''; dialog.showModal(); $('#feedback-by').focus();
   }
   function findRecord(id) {
     for (const org of orgs) { const record = arr(org.timeline).find(t => t.id === id); if (record) return {org,record}; }
     return null;
+  }
+  function evidenceRecord(id, orgId) {
+    const found = findRecord(id);
+    const expected = orgById(orgId);
+    const evidence = arr(expected?.hits).flatMap(h => arr(h.evidence)).find(e => e.record_id === id);
+    return {found, expected, record: found?.record || evidence, evidence};
+  }
+  function positionEvidencePopover(button) {
+    const popover = $('#evidence-popover');
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+    const estimatedHeight = popover.offsetHeight || 210;
+    const top = rect.bottom + 10 + estimatedHeight <= window.innerHeight
+      ? rect.bottom + 10
+      : Math.max(12, rect.top - estimatedHeight - 10);
+    popover.style.width = width+'px';
+    popover.style.left = left+'px';
+    popover.style.top = top+'px';
+  }
+  function showEvidencePopover(button) {
+    clearTimeout(hoverEvidenceTimer);
+    const {found, expected, record} = evidenceRecord(button.dataset.evidence,button.dataset.org);
+    const popover = $('#evidence-popover');
+    if (!record) { popover.hidden = true; return; }
+    popover.innerHTML = '<div class="evidence-popover-top"><strong>原始紀錄 '+esc(button.dataset.evidence)+'</strong><span class="badge '+(record.kind === 'note' ? 'amber' : 'green')+'">'+esc(record.type || '接觸紀錄')+'</span></div><p class="evidence-popover-meta">'+esc(record.date || '日期未提供')+' · '+esc(record.activity || record.type || '活動未提供')+'</p><p class="evidence-popover-text">'+esc(record.text || record.quote || '')+'</p><button class="text-button small-button" data-record-detail="'+esc(found?.org.id || expected?.id || button.dataset.org)+'" data-record="'+esc(button.dataset.evidence)+'">開啟完整接觸歷程 <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>';
+    popover.hidden = false;
+    positionEvidencePopover(button);
+  }
+  function hideEvidencePopover(immediate = false) {
+    clearTimeout(hoverEvidenceTimer);
+    const hide = () => { $('#evidence-popover').hidden = true; };
+    if (immediate) hide(); else hoverEvidenceTimer = setTimeout(hide, 180);
   }
   function highlight(text, quote) {
     if (!quote || !text.includes(quote)) return esc(text);
     const index = text.indexOf(quote); return esc(text.slice(0,index))+'<mark>'+esc(quote)+'</mark>'+esc(text.slice(index+quote.length));
   }
   function openEvidence(id, orgId, quote = '') {
-    const found = findRecord(id);
-    const expected = orgById(orgId);
-    const evidence = arr(expected?.hits).flatMap(h => arr(h.evidence)).find(e => e.record_id === id);
-    const record = found?.record || evidence;
+    const {found, expected, record, evidence} = evidenceRecord(id, orgId);
     lastDrawerFocus = document.activeElement;
-    $('#evidence-drawer').innerHTML = '<div class="drawer-top"><div><div class="eyebrow">回到原始依據</div><h2 id="drawer-title">紀錄 '+esc(id)+'</h2></div><button data-action="close-drawer" aria-label="關閉原始紀錄">×</button></div>'+
-      (record ? '<p class="muted">'+esc(found?.org.name || expected?.name || '')+'</p><dl class="field-grid"><div><dt>日期</dt><dd>'+esc(record.date || '未提供')+'</dd></div><div><dt>接觸類型</dt><dd>'+esc(record.type || '未提供')+'</dd></div><div><dt>來源系統</dt><dd>'+esc(record.source || evidence?.source || '未提供')+'</dd></div><div><dt>活動</dt><dd>'+esc(record.activity || '未提供')+'</dd></div></dl><h3>原始紀錄全文</h3><blockquote>'+highlight(String(record.text || record.quote || ''), quote || evidence?.quote || '')+'</blockquote><p class="body-copy">黃色標示是本次引用的片段。推薦理由仍需搭配整段原文判斷。</p>'+(found && orgId && found.org.id !== orgId ? '<div class="notice error">這筆紀錄屬於另一家組織，不能作為目前組織的依據。</div>' : '')+'<button class="primary" data-record-detail="'+esc(found?.org.id || orgId)+'" data-record="'+esc(id)+'">到組織時間軸看這筆紀錄 →</button>' : '<div class="notice error">找不到這筆紀錄，無法確認原文。請回到回覆內容修正引用。</div>');
+    $('#evidence-drawer').innerHTML = '<div class="drawer-top"><div><p class="body-copy">回到原始依據</p><h2 id="drawer-title">紀錄 '+esc(id)+'</h2></div><button data-action="close-drawer" aria-label="關閉原始紀錄">關閉</button></div>'+
+      (record ? '<p class="muted">'+esc(found?.org.name || expected?.name || '')+'</p><dl class="field-grid"><div><dt>日期</dt><dd>'+esc(record.date || '未提供')+'</dd></div><div><dt>接觸類型</dt><dd>'+esc(record.type || '未提供')+'</dd></div><div><dt>來源系統</dt><dd>'+esc(record.source || evidence?.source || '未提供')+'</dd></div><div><dt>活動</dt><dd>'+esc(record.activity || '未提供')+'</dd></div></dl><h3>原始紀錄全文</h3><blockquote>'+highlight(String(record.text || record.quote || ''), quote || evidence?.quote || '')+'</blockquote><p class="body-copy">黃色標示是本次引用的片段。推薦理由仍需搭配整段原文判斷。</p>'+(found && orgId && found.org.id !== orgId ? '<div class="notice error">這筆紀錄屬於另一家組織，不能作為目前組織的依據。</div>' : '')+'<button class="primary" data-record-detail="'+esc(found?.org.id || orgId)+'" data-record="'+esc(id)+'">到組織時間軸看這筆紀錄 <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>' : '<div class="notice error">找不到這筆紀錄，無法確認原文。請回到回覆內容修正引用。</div>');
     $('#drawer-backdrop').hidden = false; $('#evidence-drawer').hidden = false; document.body.classList.add('overlay-open');
     $('[data-action="close-drawer"]').focus();
   }
@@ -235,7 +404,7 @@
     const prompt = runEngine(() => Engine.buildPrompt(state.conditions,state.result.candidates));
     state.prompt = prompt || '';
     el.innerHTML = heading('05','寫得有說服力，也查得到依據','如何確認 AI 結果是對的？先檢查紀錄編號存在，再確認它屬於這家組織。')+
-      '<div class="notice">引用正確代表「紀錄存在且屬於該組織」，不代表 AI 的解讀一定正確。點開原文，仍由 PM 確認推薦理由是否合理。</div><div class="prompt-layout"><div class="panel"><div class="eyebrow">第一步 · 帶著依據請 AI 寫</div><h2>給 Claude 的推薦提示詞</h2><p class="body-copy">貼到 Claude，請它寫推薦理由。</p><label class="muted" for="prompt-text">已整理本次條件、候選與證據</label><textarea id="prompt-text" class="prompt-text" readonly>'+esc(state.prompt)+'</textarea><div class="actions"><button class="primary" data-action="copy-prompt">複製提示詞</button></div></div><div class="panel"><div class="eyebrow">第二步 · 交叉確認每一筆引用</div><h2>把 Claude 的回覆貼回來</h2><p class="body-copy">保留組織編號與紀錄編號，才能核對引用是否屬於正確的組織。</p><label class="muted" for="reply-text">Claude 的推薦內容</label><textarea id="reply-text" class="reply-text" placeholder="將包含組織與紀錄編號的回覆貼在這裡…">'+esc(state.reply)+'</textarea><div class="actions"><button class="primary" data-action="verify">檢查引用</button></div><div id="verification-results" aria-live="polite"></div></div></div>';
+      '<div class="notice">引用正確代表「紀錄存在且屬於該組織」，不代表 AI 的解讀一定正確。點開原文，仍由 PM 確認推薦理由是否合理。</div><div class="prompt-layout"><div class="panel"><h2>給 Claude 的推薦提示詞</h2><p class="body-copy">這是可選的文字整理工具，不會改變排序或判斷。</p><label class="muted" for="prompt-text">已整理本次條件、候選與證據</label><textarea id="prompt-text" class="prompt-text" readonly>'+esc(state.prompt)+'</textarea><div class="actions"><button class="primary" data-action="copy-prompt">複製提示詞</button></div></div><div class="panel"><h2>把 Claude 的回覆貼回來</h2><p class="body-copy">保留組織編號與紀錄編號，才能核對引用是否屬於正確的組織。</p><label class="muted" for="reply-text">Claude 的推薦內容</label><textarea id="reply-text" class="reply-text" placeholder="將包含組織與紀錄編號的回覆貼在這裡…">'+esc(state.reply)+'</textarea><div class="actions"><button class="primary" data-action="verify">檢查引用</button></div><div id="verification-results" aria-live="polite"></div></div></div>';
     renderVerification();
   }
   function renderVerification() {
@@ -255,7 +424,7 @@
       }
       return out+esc(line.slice(from));
     }).join('\n');
-    el.innerHTML = '<div class="verification-summary"><span>✓ '+esc(v.ok_count)+' 筆引用正確</span><span class="bad">'+esc(v.bad_count)+' 筆有問題</span></div>'+
+    el.innerHTML = '<div class="verification-summary"><span>'+esc(v.ok_count)+' 筆引用正確</span><span class="bad">'+esc(v.bad_count)+' 筆有問題</span></div>'+
       (!items.length ? '<div class="notice warning">沒有找到可檢查的引用。請保留組織編號與紀錄編號，再檢查一次。</div>' : '')+
       bad.map(item => '<div class="verification-problem">'+esc(item.org_id || '組織未標明')+' · <button class="evidence-button" data-evidence="'+esc(item.record_id)+'" data-org="'+esc(item.org_id)+'">'+esc(item.record_id)+'</button> '+(item.status === 'wrong_org' ? '這筆紀錄不屬於這家組織' : '找不到這筆紀錄')+'</div>').join('')+
       '<h3 style="margin-top:18px">回覆內容與引用標記</h3><p class="body-copy">綠色：引用核對通過 · 紅色：需修正或尚無法確認。點編號看原文。</p><div class="reply-render">'+rendered+'</div>';
@@ -263,16 +432,55 @@
   document.addEventListener('input', event => {
     if (event.target.id === 'sentence') state.sentence = event.target.value;
     if (event.target.id === 'reply-text') { state.reply = event.target.value; state.verified = null; renderVerification(); }
+    if (event.target.id === 'feedback-note') {
+      const note = event.target.value.trim();
+      const prompt = $('#note-tag-prompt');
+      const dialog = $('#feedback-dialog');
+      if (!note) { prompt.hidden = true; dialog.dataset.noteTag = ''; return; }
+      if (dialog.dataset.noteTag && dialog.dataset.noteTag !== note) dialog.dataset.noteTag = '';
+      prompt.hidden = false;
+      prompt.classList.toggle('is-added', dialog.dataset.noteTag === note);
+      prompt.innerHTML = dialog.dataset.noteTag === note
+        ? '<span class="tag-success">已加入標籤</span><span class="badge green">'+esc(note)+'</span><button type="button" class="text-button small-button" data-note-tag-action="cancel">取消加入</button>'
+        : '<span>要把這句話加入這家組織的標籤嗎？</span><button type="button" class="secondary small-button" data-note-tag-action="cancel">先不要</button><button type="button" class="primary small-button" data-note-tag-action="add">加入標籤</button>';
+    }
     if (['need-n','multiplier'].includes(event.target.id)) $('#estimate').textContent = '將列出 '+((Number($('#need-n').value)||0)*(Number($('#multiplier').value)||0))+' 家候選';
   });
   document.addEventListener('change', event => {
     if (event.target.id === 'org-picker' && event.target.value) selectOrg(event.target.value);
-    if (event.target.id === 'feedback-reason') $('#reason-hint').textContent = settings.feedback_reasons?.[event.target.value]?.hint || '';
+    if (event.target.id === 'feedback-by') {
+      const entry = $('#new-person-entry');
+      const isNew = event.target.value === '__new__';
+      if (entry) entry.hidden = !isNew;
+      if (isNew) $('#new-feedback-person')?.focus();
+    }
+    if (event.target.dataset.feedbackReason) {
+      const selected = [...document.querySelectorAll('[data-feedback-reason][aria-pressed="true"]')].map(button => button.dataset.feedbackReason);
+      $('#reason-hint').textContent = selected.map(reason => settings.feedback_reasons?.[reason]?.hint).filter(Boolean).join('；');
+    }
+    if (event.target.dataset.labelRule && state.selected) {
+      const key = state.selected+'|'+event.target.dataset.labelRule;
+      if (event.target.checked) votes[key] = 'disagree'; else delete votes[key];
+      write(VOTES,votes);
+    }
   });
   document.addEventListener('submit', event => {
-    if (event.target.id !== 'negative-form') return; event.preventDefault();
-    const note = $('#feedback-note').value.trim(); if (!note) { $('#feedback-note').setCustomValidity('請留一句話說明原因。'); $('#feedback-note').reportValidity(); $('#feedback-note').setCustomValidity(''); return; }
-    saveFeedback($('#feedback-dialog').dataset.org,'不符合',$('#feedback-reason').value,note); $('#feedback-dialog').close();
+    if (!['negative-form', 'positive-form'].includes(event.target.id)) return; event.preventDefault();
+    if (event.target.id === 'positive-form') {
+      const by = $('#feedback-by').value;
+      const primary = $('#positive-label').value;
+      const customTag = $('#positive-tag').value.trim();
+      const note = $('#positive-note').value.trim();
+      if (!by || !primary) { toast('請選擇留言人與主要參考標籤。'); return; }
+      saveFeedback($('#feedback-dialog').dataset.org, '符合', primary, note, by, customTag ? [customTag] : [], primary);
+      $('#feedback-dialog').close();
+      return;
+    }
+    const reasons = [...document.querySelectorAll('[data-feedback-reason][aria-pressed="true"]')].map(button => button.dataset.feedbackReason);
+    const note = $('#feedback-note').value.trim();
+    if (!reasons.length) { toast('請至少選一個主要原因。'); return; }
+    if (!note) { $('#feedback-note').setCustomValidity('請留一句話說明原因。'); $('#feedback-note').reportValidity(); $('#feedback-note').setCustomValidity(''); return; }
+    saveFeedback($('#feedback-dialog').dataset.org,'不符合',reasons,note,$('#feedback-by').value); $('#feedback-dialog').close();
   });
   document.addEventListener('click', async event => {
     const button = event.target.closest('button'); if (!button) return;
@@ -288,6 +496,41 @@
       const target = field === 'soft' ? state.conditions : state.conditions.hard, key = field;
       const selected = arr(target[key]); target[key] = selected.includes(value) ? selected.filter(v => v !== value) : [...selected,value]; renderConditions(); return;
     }
+    if (button.dataset.feedbackReason) {
+      const selected = button.getAttribute('aria-pressed') === 'true';
+      button.setAttribute('aria-pressed', String(!selected));
+      button.classList.toggle('selected', !selected);
+      const reasons = [...document.querySelectorAll('[data-feedback-reason][aria-pressed="true"]')].map(item => settings.feedback_reasons?.[item.dataset.feedbackReason]?.hint).filter(Boolean);
+      $('#reason-hint').textContent = reasons.join('；');
+      return;
+    }
+    if (button.dataset.noteTagAction) {
+      const prompt = $('#note-tag-prompt');
+      if (button.dataset.noteTagAction === 'add') {
+        const note = $('#feedback-note').value.trim();
+        $('#feedback-dialog').dataset.noteTag = note;
+        prompt.innerHTML = '<span class="tag-success">已加入標籤</span><span class="badge green">'+esc(note)+'</span><button type="button" class="text-button small-button" data-note-tag-action="cancel">取消加入</button>';
+        prompt.classList.add('is-added');
+      } else {
+        $('#feedback-dialog').dataset.noteTag = '';
+        prompt.innerHTML = '<span>已取消加入標籤，這句話仍會保留在回饋中。</span>';
+        prompt.classList.remove('is-added');
+      }
+      return;
+    }
+    if (button.dataset.personAction) {
+      const entry = $('#new-person-entry');
+      const select = $('#feedback-by');
+      if (button.dataset.personAction === 'cancel') {
+        entry.hidden = true; select.value = '';
+        return;
+      }
+      const name = $('#new-feedback-person').value.trim();
+      if (!name) { toast('請輸入留言人姓名。'); $('#new-feedback-person').focus(); return; }
+      if (!people.includes(name)) { people.push(name); write(PEOPLE, people); }
+      select.innerHTML = '<option value="">請選擇留言人</option>'+personOptions(name);
+      select.value = name; entry.hidden = true; toast('已新增留言人：'+name); return;
+    }
     if (button.dataset.scenario) {
       if (!collectConditions()) return;
       const scenario = button.dataset.scenario, defaults = settings.scenario_defaults?.[scenario] || {};
@@ -295,8 +538,17 @@
     }
     if (button.dataset.detail) { selectOrg(button.dataset.detail); return; }
     if (button.dataset.evidence) { openEvidence(button.dataset.evidence,button.dataset.org,button.dataset.quote); return; }
-    if (button.dataset.recordDetail) { closeDrawer(); selectOrg(button.dataset.recordDetail,button.dataset.record); return; }
-    if (button.dataset.verdict) { if (!engineReady()) return; if (button.dataset.verdict === '符合') saveFeedback(button.dataset.org,'符合'); else openFeedback(button.dataset.org); return; }
+    if (button.dataset.recordDetail) { hideEvidencePopover(true); closeDrawer(); selectOrg(button.dataset.recordDetail,button.dataset.record); return; }
+    if (button.dataset.labelReview && state.selected) {
+      const org = orgById(state.selected);
+      votes[state.selected+'|overall'] = button.dataset.labelReview;
+      if (button.dataset.labelReview === 'agree') {
+        arr(org?.hits).forEach(hit => delete votes[state.selected+'|'+hit.rule]);
+        delete votes[state.selected+'|note'];
+      }
+      write(VOTES,votes); renderDetail(); return;
+    }
+    if (button.dataset.verdict) { if (!engineReady()) return; if (button.dataset.verdict === '符合') openPositiveFeedback(button.dataset.org); else openFeedback(button.dataset.org); return; }
     if (button.dataset.undo) { const latest = latestFeedback(button.dataset.undo); const index = feedback.indexOf(latest); if (index >= 0) { removeFeedback(index); toast('已撤回，名單已重新排序。'); } return; }
     if (button.dataset.remove != null) { removeFeedback(Number(button.dataset.remove)); toast('已刪除這筆回饋。'); return; }
     if (button.dataset.vote) {
@@ -305,6 +557,7 @@
       write(VOTES,votes); const y = window.scrollY; state.focusRecord = null; renderDetail(); window.scrollTo(0,y); return;
     }
     switch (button.dataset.action) {
+      case 'close-inline-detail': closeInlineDetail(); break;
       case 'parse': {
         state.sentence = $('#sentence').value.trim();
         if (!state.sentence) { toast('先寫一句這次的需求，或選一個示範需求。'); $('#sentence').focus(); return; }
@@ -334,8 +587,34 @@
         state.reply = $('#reply-text').value.trim(); if (!state.reply) { toast('請先貼上 Claude 的回覆。'); $('#reply-text').focus(); return; }
         const verified = runEngine(() => Engine.verifyReply(state.reply,state.result.candidates)); if (verified) { state.verified = verified; renderVerification(); } break;
       }
+      case 'save-label-review': {
+        const note = $('#label-review-note')?.value.trim();
+        const selectedLabels = document.querySelectorAll('[data-label-rule]:checked');
+        const by = $('#label-review-by')?.value || 'PM';
+        if (!selectedLabels.length) { toast('請至少標出一條不正確的判讀。'); return; }
+        if (!note) { toast('請留一句話說明哪裡需要修正。'); $('#label-review-note')?.focus(); return; }
+        selectedLabels.forEach(input => recordLabelEdit(state.selected, 'delete', input.dataset.labelName, by, note));
+        votes[state.selected+'|note'] = note; write(VOTES,votes); renderDetail(); toast('已記下這次判讀確認。'); break;
+      }
     }
   });
+  document.addEventListener('pointerover', event => {
+    const button = event.target.closest('.evidence-button');
+    if (button) showEvidencePopover(button);
+    if (event.target.closest('#evidence-popover')) clearTimeout(hoverEvidenceTimer);
+  });
+  document.addEventListener('pointerout', event => {
+    if (event.target.closest('.evidence-button') || event.target.closest('#evidence-popover')) hideEvidencePopover();
+  });
+  document.addEventListener('focusin', event => {
+    const button = event.target.closest('.evidence-button');
+    if (button) showEvidencePopover(button);
+  });
+  document.addEventListener('focusout', event => {
+    if (event.target.closest('.evidence-button') || event.target.closest('#evidence-popover')) hideEvidencePopover();
+  });
+  $('#evidence-popover').addEventListener('pointerover', () => clearTimeout(hoverEvidenceTimer));
+  $('#evidence-popover').addEventListener('pointerout', hideEvidencePopover);
   $('#drawer-backdrop').addEventListener('click',closeDrawer);
   document.addEventListener('keydown', event => {
     if ($('#evidence-drawer').hidden) return;

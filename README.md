@@ -48,15 +48,13 @@ python -m http.server 8765
 
 網頁啟動時 `window.APP_DATA = {orgs, rules, conditions, demands, feedback}`，再 `Engine.init(APP_DATA)`。
 
-### 五個畫面（建議 Figma Frame 同名）
+### 三個工作區（建議 Figma Frame 同名）
 
 | Frame | 用到的資料 |
 |---|---|
-| 01 需求輸入 | `APP_DATA.demands[].title/sentence`；`Engine.parseSentence(句子)` → 條件，其中 `_matched` 是「系統讀到了什麼」 |
-| 02 候選名單 | `Engine.rank(條件, 回饋)` → `candidates[]`、`relaxed[]`（已放寬）、`excluded[]`（已排除）、`disabled_rules[]`（因缺欄位停用） |
-| 03 組織詳情 | `APP_DATA.orgs.orgs[]`：`summary_30s`、`fields`、`missing`、`stats`、`hits[]`、`timeline[]` |
-| 04 第二輪回饋 | `Engine.feedbackItem(...)`、`Engine.exportFeedback(list)` |
-| 05 提示詞與驗證 | `Engine.buildPrompt(條件, 候選)`、`Engine.verifyReply(貼回的文字, 候選)` |
+| 01 建立名單 | `APP_DATA.demands[].title/sentence`；`Engine.parseSentence(句子)` → 條件，其中 `_matched` 是「系統讀到了什麼」 |
+| 02 審核名單 | `Engine.rank(條件, 回饋)` → `candidates[]`、`relaxed[]`（已放寬）、`excluded[]`（已排除）、`disabled_rules[]`（因缺欄位停用）；組織詳情與 `Engine.feedbackItem(...)` 在同一工作區 |
+| 03 選用工具 | `Engine.buildPrompt(條件, 候選)`、`Engine.verifyReply(貼回的文字, 候選)`；`Engine.exportFeedback(list)` 用於工作區內匯出回饋 |
 
 ### 候選卡片的欄位（`candidates[]` 每一筆）
 
