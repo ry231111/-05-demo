@@ -262,7 +262,7 @@
     const fitMax = Math.max(1, ...arr(state.result?.candidates).map(item => arr(item.reasons).length));
     const fitRatio = Math.min(1, reasons.length / fitMax);
     const fitLevel = fitRatio >= .67 ? '高' : fitRatio >= .34 ? '中' : '低';
-    return '<article class="candidate '+(demoted ? 'demoted' : '')+'" data-candidate="'+esc(c.org_id)+'"><div class="candidate-top"><div class="candidate-identity"><span class="rank">'+String(i + 1).padStart(2, '0')+'</span><div><h2>'+esc(c.name)+'</h2><div class="org-tags">'+tagFields.map(key => '<span class="badge">'+esc(display(f[key]))+(key === '全職人數' && f[key] != null ? ' 人' : '')+'</span>').join('')+(c.hard_status === 'relaxed' ? '<span class="badge amber">放寬後納入</span>' : '')+(c.hard_status === 'missing' || arr(c.missing_fields).length ? '<span class="badge amber">資料缺：'+arr(c.missing_fields).map(esc).join('、')+'</span>' : '')+'</div></div></div><div class="score"><small>排序摘要</small><strong>符合 '+reasons.length+' 項</strong><span class="score-detail">符合程度：'+fitLevel+(warnings.length ? ' · 待確認 '+warnings.length+' 項' : '')+'</span><div class="fit-meter" role="img" aria-label="符合程度 '+fitLevel+'，符合 '+reasons.length+' 項"><span style="width:'+Math.max(8, fitRatio*100)+'%"></span></div></div></div>'+
+    return '<article class="candidate '+(demoted ? 'demoted' : '')+'" data-candidate="'+esc(c.org_id)+'"><div class="candidate-top"><div class="candidate-identity"><span class="rank">'+String(i + 1).padStart(2, '0')+'</span><div><h2>'+esc(c.name)+'</h2><div class="org-tags">'+tagFields.map(key => '<span class="badge">'+esc(display(f[key]))+(key === '全職人數' && f[key] != null ? ' 人' : '')+'</span>').join('')+(c.hard_status === 'relaxed' ? '<span class="badge amber">放寬後納入</span>' : '')+(c.hard_status === 'missing' || arr(c.missing_fields).length ? '<span class="badge amber">資料缺：'+arr(c.missing_fields).map(esc).join('、')+'</span>' : '')+'</div></div></div><div class="score"><small>排序摘要</small><strong>符合 '+reasons.length+' 項</strong><span class="score-detail">符合程度：'+fitLevel+(warnings.length ? ' · 待確認 '+warnings.length+' 項' : '')+'</span><div class="fit-meter" role="img" aria-label="符合程度 '+fitLevel+'，符合 '+reasons.length+' 項"><span style="width:'+Math.max(8, fitRatio*100)+'%"></span></div></div></div>'+reasonSummary(c.org_id, latest)+
       '<details class="candidate-evidence"><summary>查看推薦依據、待確認與電訪問題</summary><div class="candidate-body">'+
       reasonColumn('推薦依據', reasons, '', c.org_id, '符合目前條件，可進一步認識。')+
       reasonColumn('待確認', warnings, 'warning', c.org_id, '目前沒有明確警訊，仍建議電訪確認。')+
@@ -286,7 +286,7 @@
   }
 
   function feedbackWorkspace() {
-    const entries = feedback.slice().reverse();
+    const entries = [...new Map(feedback.map(item => [item.org_id, item])).values()].reverse();
     return '<details class="workspace-feedback"><summary>團隊決策清單 <span class="badge green">'+feedback.length+' 筆</span></summary>'+
       '<div class="workspace-feedback-body"><p class="body-copy">逐家確認要保留或暫不邀請，並指定主要推薦原因。</p>'+
       (entries.length ? '<div class="feedback-inline-list">'+entries.map(item => '<div class="feedback-inline-item decision-item"><div><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><p>主要推薦原因：'+esc(item.primary_label || '尚未指定')+(item.tags?.length ? ' · 新增標籤：'+esc(arr(item.tags).join('、')) : '')+'</p></div><button class="text-button" data-discuss="'+esc(item.org_id)+'">加入討論</button></div>').join('')+'</div>' : '<p class="muted">尚未留下決策，先在候選卡上選擇「符合」或「不符合」。</p>')+
@@ -483,13 +483,27 @@
     $('#feedback-dialog').close();
     toast(tag ? '已保存討論意見，並新增標籤。' : '已保存討論意見。');
   }
+  function reasonSummary(orgId, feedbackItem = null) {
+    const candidate = arr(state.result?.candidates).find(item => item.org_id === orgId);
+    const positive = [...arr(candidate?.reasons).map(item => item.label)];
+    const hesitation = [...arr(candidate?.warnings).map(item => item.label)];
+    if (feedbackItem?.primary_label) {
+      const target = feedbackItem.verdict === '不符合' ? hesitation : positive;
+      if (!target.includes(feedbackItem.primary_label)) target.unshift(feedbackItem.primary_label);
+    }
+    arr(feedbackItem?.reason_code).forEach(label => {
+      if (!hesitation.includes(label)) hesitation.push(label);
+    });
+    const renderGroup = (title, items, kind, fallback) => '<div class="reason-summary-group '+kind+'"><span class="reason-summary-title">'+title+'</span><div class="reason-summary-items">'+(items.length ? items.slice(0,3).map(label => '<span class="reason-summary-item">'+esc(label)+'</span>').join('') : '<span class="reason-summary-empty">'+fallback+'</span>')+'</div></div>';
+    return '<div class="reason-summary">'+renderGroup('主要推薦原因', positive, 'positive', '尚未整理推薦訊號')+renderGroup('猶豫原因', hesitation, 'hesitation', '目前沒有明確猶豫訊號')+'</div>';
+  }
   function renderPrompt() {
     const el = $('#step-5');
-    if (!state.result || !arr(state.result.candidates).length) { el.innerHTML = heading('05','團隊決策清單','先產生候選名單，再逐家確認要不要邀請。')+empty('先準備一份候選名單', '產生名單後，這裡會集中顯示團隊決策與主要推薦原因。','back-results','回候選名單'); return; }
+    if (!state.result || !arr(state.result.candidates).length) { el.innerHTML = heading('05','團隊考慮名單','先產生候選名單，再共同留下判斷依據。')+empty('先準備一份候選名單', '產生名單後，這裡會集中顯示團隊決策與主要推薦原因。','back-results','回候選名單'); return; }
     const entries = feedback.slice().reverse();
     el.innerHTML = heading('05','團隊決策清單','集中查看哪些組織要保留、哪些不要，以及每家主要推薦原因。','<button class="secondary" data-step="2">回考慮名單</button>')+
-      '<div class="panel decision-page-panel"><div class="section-label"><h2>要／不要與主要推薦原因</h2><span class="badge green">'+entries.length+' 筆決策</span></div><p class="body-copy">這份清單取代檔案匯出，讓團隊直接用組織名稱與主要推薦原因討論下一步。</p>'+
-      (entries.length ? '<div class="decision-page-list">'+entries.map(item => '<article class="decision-page-item"><div class="decision-page-main"><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><strong>主要推薦原因：'+esc(item.primary_label || arr(item.reason_code).join('、') || '尚未指定')+'</strong>'+(arr(item.tags).length ? '<div class="org-tags">'+arr(item.tags).map(tag => signalBadge(tag, item.tag_kinds?.[tag] || (item.verdict === '不符合' ? 'hesitation' : 'positive'))).join('')+'</div>' : '')+(item.note ? '<p class="body-copy">'+esc(item.note)+'</p>' : '')+'</div><div class="decision-page-actions"><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date || '')+'</small><button class="text-button" data-discuss="'+esc(item.org_id)+'">加入討論</button></div></article>').join('') : '<div class="empty"><h2>還沒有團隊決策</h2><p>回到考慮名單，替每家組織選擇「符合」或「不符合」。</p><button class="primary" data-step="2">回考慮名單</button></div>')+'</div>';
+      '<div class="panel decision-page-panel"><div class="section-label"><h2>團隊選擇與主要推薦原因</h2><span class="badge green">'+entries.length+' 筆決策</span></div><p class="body-copy">由團隊選擇要不要，系統只呈現推薦與猶豫依據，不代替團隊做決定。</p>'+
+      (entries.length ? '<div class="decision-page-list">'+entries.map(item => '<article class="decision-page-item"><div class="decision-page-main"><div class="decision-org-block"><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button>'+reasonSummary(item.org_id, item)+(arr(item.tags).length ? '<div class="org-tags">'+arr(item.tags).map(tag => signalBadge(tag, item.tag_kinds?.[tag] || (item.verdict === '不符合' ? 'hesitation' : 'positive'))).join('')+'</div>' : '')+(item.note ? '<p class="body-copy">'+esc(item.note)+'</p>' : '')+'</div></div><div class="decision-page-actions"><select class="decision-select" data-decision-org="'+esc(item.org_id)+'" aria-label="選擇 '+esc(orgById(item.org_id)?.name || item.org_id)+' 要不要"><option value="要" '+(item.verdict === '符合' ? 'selected' : '')+'>要</option><option value="不要" '+(item.verdict === '不符合' ? 'selected' : '')+'>不要</option></select><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date || '')+'</small><button class="text-button" data-discuss="'+esc(item.org_id)+'">加入討論</button></div></article>').join('') : '<div class="empty"><h2>還沒有團隊決策</h2><p>回到考慮名單，替每家組織選擇要不要。</p><button class="primary" data-step="2">回考慮名單</button></div>')+'</div>';
   }
   function renderVerification() {
     const el = $('#verification-results'); if (!el) return;
@@ -531,6 +545,11 @@
     if (['need-n','multiplier'].includes(event.target.id)) $('#estimate').textContent = '將列出 '+((Number($('#need-n').value)||0)*(Number($('#multiplier').value)||0))+' 家候選';
   });
   document.addEventListener('change', event => {
+    if (event.target.dataset.decisionOrg) {
+      if (event.target.value === '要') openPositiveFeedback(event.target.dataset.decisionOrg);
+      if (event.target.value === '不要') openFeedback(event.target.dataset.decisionOrg);
+      return;
+    }
     if (event.target.id === 'org-picker' && event.target.value) selectOrg(event.target.value);
     if (['feedback-by', 'discussion-by'].includes(event.target.id)) {
       const prefix = event.target.id === 'discussion-by' ? 'discussion-' : '';
