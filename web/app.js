@@ -29,7 +29,7 @@
   const votes = read(VOTES, {});
   const people = read(PEOPLE, ['PM', '資深顧問', '會員窗口', '其他夥伴']);
   const labelHistory = read(LABEL_HISTORY, []);
-  const state = { step:1, sentence:'', conditions:null, result:null, selected:null, reply:'', verified:null, prompt:'', focusRecord:null };
+  const state = { step:1, sentence:'', conditions:null, result:null, selected:null, reply:'', verified:null, prompt:'', focusRecord:null, priorityLabels:[] };
   const orgs = arr(data?.orgs?.orgs);
   const meta = data?.orgs?.meta || {};
   const settings = data?.conditions || {};
@@ -236,7 +236,13 @@
     const scoreWidth = Math.max(0, Math.min(100, score / maxScore * 100));
     const tagFields = ['議題', '區域', '全職人數', '會籍'];
     const reasons = arr(c.reasons), warnings = arr(c.warnings), calls = arr(c.call_questions);
-    return '<article class="candidate '+(demoted ? 'demoted' : '')+'" data-candidate="'+esc(c.org_id)+'"><div class="candidate-top"><div class="candidate-identity"><span class="rank">'+String(i + 1).padStart(2, '0')+'</span><div><h2>'+esc(c.name)+'</h2><div class="org-tags">'+tagFields.map(key => '<span class="badge">'+esc(display(f[key]))+(key === '全職人數' && f[key] != null ? ' 人' : '')+'</span>').join('')+(c.hard_status === 'relaxed' ? '<span class="badge amber">放寬後納入</span>' : '')+(c.hard_status === 'missing' || arr(c.missing_fields).length ? '<span class="badge amber">資料缺：'+arr(c.missing_fields).map(esc).join('、')+'</span>' : '')+'</div></div></div><div class="score"><small>排序摘要</small><strong>符合 '+reasons.length+' 項</strong><span class="score-detail">'+(warnings.length ? '待確認 '+warnings.length+' 項' : '目前沒有明確警訊')+'</span><div class="score-track" role="img" aria-label="符合 '+reasons.length+' 項條件"><span style="width:'+scoreWidth+'%"></span></div></div></div><details class="candidate-evidence"><summary>查看推薦依據、待確認與電訪問題</summary><div class="candidate-body">'+
+    const priority = state.priorityLabels.filter(label => [...reasons, ...warnings].some(item => item.label === label));
+    const fitMax = Math.max(1, ...arr(state.result?.candidates).map(item => arr(item.reasons).length));
+    const fitRatio = Math.min(1, reasons.length / fitMax);
+    const fitLevel = fitRatio >= .67 ? '高' : fitRatio >= .34 ? '中' : '低';
+    return '<article class="candidate '+(demoted ? 'demoted' : '')+'" data-candidate="'+esc(c.org_id)+'"><div class="candidate-top"><div class="candidate-identity"><span class="rank">'+String(i + 1).padStart(2, '0')+'</span><div><h2>'+esc(c.name)+'</h2><div class="org-tags">'+tagFields.map(key => '<span class="badge">'+esc(display(f[key]))+(key === '全職人數' && f[key] != null ? ' 人' : '')+'</span>').join('')+(c.hard_status === 'relaxed' ? '<span class="badge amber">放寬後納入</span>' : '')+(c.hard_status === 'missing' || arr(c.missing_fields).length ? '<span class="badge amber">資料缺：'+arr(c.missing_fields).map(esc).join('、')+'</span>' : '')+'</div></div></div><div class="score"><small>排序摘要</small><strong>符合 '+reasons.length+' 項</strong><span class="score-detail">符合程度：'+fitLevel+(warnings.length ? ' · 待確認 '+warnings.length+' 項' : '')+'</span><div class="fit-meter" role="img" aria-label="符合程度 '+fitLevel+'，符合 '+reasons.length+' 項"><span style="width:'+Math.max(8, fitRatio*100)+'%"></span></div></div></div>'+
+      (priority.length ? '<div class="priority-labels"><span class="priority-label-title">優先呈現</span>'+priority.map(label => '<span class="badge green">'+esc(label)+'</span>').join('')+'</div>' : '')+
+      '<details class="candidate-evidence"><summary>查看推薦依據、待確認與電訪問題</summary><div class="candidate-body">'+
       reasonColumn('推薦依據', reasons, '', c.org_id, '符合目前條件，可進一步認識。')+
       reasonColumn('待確認', warnings, 'warning', c.org_id, '目前沒有明確警訊，仍建議電訪確認。')+
       reasonColumn('電訪問題', calls, 'call', c.org_id, '確認參與意願、可投入人力與期待。')+'</div></details>'+
@@ -255,7 +261,7 @@
       (disabled.length ? '<details class="notice warning"><summary>有 '+disabled.length+' 條規則因資料缺欄位停用</summary>'+disabled.map(d => '<p>'+esc(d.id)+'：'+esc(d.reason)+'</p>').join('')+'</details>' : '')+
       '<div class="results-tools"><span>先看推薦理由，再用現場經驗確認。分數只協助排序。</span><button class="text-button" data-step="1"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>調整條件</button></div>'+
       (arr(r.excluded).length ? '<details class="notice"><summary>已排除 '+r.excluded.length+' 家'+(state.conditions.exclude_recent_partner ? '（近一年合作過）' : '')+'</summary>'+r.excluded.map(x => '<p>'+esc(x.name)+' · '+esc(x.reason)+'</p>').join('')+'</details>' : '')+
-      (candidates.length ? '<div id="candidate-list">'+candidates.map((c, i) => candidateCard(c,i,maxScore)).join('')+'</div>'+feedbackWorkspace() : empty('沒有符合的組織，試試放寬條件', '可以減少議題或區域限制，再試一次。'));
+      (candidates.length ? '<div id="candidate-list">'+candidates.map((c, i) => candidateCard(c,i,maxScore)).join('')+'</div>' : empty('沒有符合的組織，試試放寬條件', '可以減少議題或區域限制，再試一次.'));
   }
 
   function feedbackWorkspace() {
@@ -398,14 +404,33 @@
     $('#drawer-backdrop').hidden = true; $('#evidence-drawer').hidden = true; document.body.classList.remove('overlay-open');
     if (lastDrawerFocus?.isConnected) lastDrawerFocus.focus();
   }
+  function availablePriorityLabels() {
+    return [...new Set(arr(state.result?.candidates).flatMap(candidate => [
+      ...arr(candidate.reasons).map(item => item.label),
+      ...arr(candidate.warnings).map(item => item.label)
+    ]).filter(Boolean))];
+  }
+  function renderPriorityModal(labels) {
+    const dialog = $('#feedback-dialog');
+    const selected = state.priorityLabels;
+    dialog.innerHTML = '<form id="priority-form"><div class="dialog-top"><h2 id="feedback-title">先決定要看什麼</h2><button type="button" data-action="close-feedback" aria-label="關閉標籤排序視窗"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button></div><p class="body-copy">請依序點選最想先看到的推薦標籤，審核名單會把它們固定顯示在每家組織上方。</p><div class="priority-picked">'+(selected.length ? selected.map((label, index) => '<span class="priority-picked-item"><b>'+(index+1)+'</b>'+esc(label)+'</span>').join('') : '<span class="muted">尚未選擇，請從下方開始。</span>')+'</div><div class="priority-options">'+labels.map(label => '<button type="button" class="chip '+(selected.includes(label) ? 'selected' : '')+'" data-priority-label="'+esc(label)+'" aria-pressed="'+selected.includes(label)+'" '+(selected.includes(label) ? 'disabled' : '')+'>'+esc(label)+'</button>').join('')+'</div><div class="actions"><button type="button" data-action="close-feedback">取消</button><button type="submit" class="primary" '+(!selected.length ? 'disabled' : '')+'>套用排序並查看名單</button></div></form>';
+  }
+  function openPriorityModal() {
+    const labels = availablePriorityLabels();
+    if (!labels.length) { state.priorityLabels = []; go(2); return; }
+    state.priorityLabels = [];
+    renderPriorityModal(labels);
+    const dialog = $('#feedback-dialog');
+    dialog.dataset.priorityLabels = JSON.stringify(labels);
+    dialog.showModal();
+  }
   function renderPrompt() {
     const el = $('#step-5');
-    if (!state.result || !arr(state.result.candidates).length) { el.innerHTML = heading('05','讓 AI 幫忙寫，也讓每個依據可確認','推薦文字可以交給 Claude，最後的確認仍掌握在你手上。')+empty('先準備一份候選名單', '產生名單後，就能帶著原始依據請 Claude 撰寫推薦理由。','back-results','回候選名單'); return; }
-    const prompt = runEngine(() => Engine.buildPrompt(state.conditions,state.result.candidates));
-    state.prompt = prompt || '';
-    el.innerHTML = heading('05','寫得有說服力，也查得到依據','如何確認 AI 結果是對的？先檢查紀錄編號存在，再確認它屬於這家組織。')+
-      '<div class="notice">引用正確代表「紀錄存在且屬於該組織」，不代表 AI 的解讀一定正確。點開原文，仍由 PM 確認推薦理由是否合理。</div><div class="prompt-layout"><div class="panel"><h2>給 Claude 的推薦提示詞</h2><p class="body-copy">這是可選的文字整理工具，不會改變排序或判斷。</p><label class="muted" for="prompt-text">已整理本次條件、候選與證據</label><textarea id="prompt-text" class="prompt-text" readonly>'+esc(state.prompt)+'</textarea><div class="actions"><button class="primary" data-action="copy-prompt">複製提示詞</button></div></div><div class="panel"><h2>把 Claude 的回覆貼回來</h2><p class="body-copy">保留組織編號與紀錄編號，才能核對引用是否屬於正確的組織。</p><label class="muted" for="reply-text">Claude 的推薦內容</label><textarea id="reply-text" class="reply-text" placeholder="將包含組織與紀錄編號的回覆貼在這裡…">'+esc(state.reply)+'</textarea><div class="actions"><button class="primary" data-action="verify">檢查引用</button></div><div id="verification-results" aria-live="polite"></div></div></div>';
-    renderVerification();
+    if (!state.result || !arr(state.result.candidates).length) { el.innerHTML = heading('05','團隊決策清單','先產生候選名單，再逐家確認要不要邀請。')+empty('先準備一份候選名單', '產生名單後，這裡會集中顯示團隊決策與首要標籤。','back-results','回候選名單'); return; }
+    const entries = feedback.slice().reverse();
+    el.innerHTML = heading('05','團隊決策清單','集中查看哪些組織要保留、哪些不要，以及每家最先呈現的推薦標籤。','<button class="secondary" data-step="2">回審核名單</button>')+
+      '<div class="panel decision-page-panel"><div class="section-label"><h2>要／不要與首要呈現標籤</h2><span class="badge green">'+entries.length+' 筆決策</span></div><p class="body-copy">這份清單取代檔案匯出，讓團隊直接用組織名稱與首要標籤討論下一步。</p>'+
+      (entries.length ? '<div class="decision-page-list">'+entries.map(item => '<article class="decision-page-item"><div class="decision-page-main"><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><strong>首要呈現：'+esc(item.primary_label || '尚未指定')+'</strong>'+(arr(item.tags).length ? '<div class="org-tags">'+arr(item.tags).map(tag => '<span class="badge green">新增：'+esc(tag)+'</span>').join('')+'</div>' : '')+(item.note ? '<p class="body-copy">'+esc(item.note)+'</p>' : '')+'</div><div class="decision-page-actions"><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date || '')+'</small><button class="text-button danger" data-undo="'+esc(item.org_id)+'">撤回</button></div></article>').join('') : '<div class="empty"><h2>還沒有團隊決策</h2><p>回到審核名單，替每家組織選擇「符合」或「不符合」。</p><button class="primary" data-step="2">回審核名單</button></div>')+'</div>';
   }
   function renderVerification() {
     const el = $('#verification-results'); if (!el) return;
@@ -465,7 +490,11 @@
     }
   });
   document.addEventListener('submit', event => {
-    if (!['negative-form', 'positive-form'].includes(event.target.id)) return; event.preventDefault();
+    if (!['negative-form', 'positive-form', 'priority-form'].includes(event.target.id)) return; event.preventDefault();
+    if (event.target.id === 'priority-form') {
+      if (!state.priorityLabels.length) { toast('請至少選擇一個推薦標籤。'); return; }
+      $('#feedback-dialog').close(); go(2); return;
+    }
     if (event.target.id === 'positive-form') {
       const by = $('#feedback-by').value;
       const primary = $('#positive-label').value;
@@ -531,6 +560,11 @@
       select.innerHTML = '<option value="">請選擇留言人</option>'+personOptions(name);
       select.value = name; entry.hidden = true; toast('已新增留言人：'+name); return;
     }
+    if (button.dataset.priorityLabel) {
+      if (!state.priorityLabels.includes(button.dataset.priorityLabel)) state.priorityLabels.push(button.dataset.priorityLabel);
+      renderPriorityModal(JSON.parse($('#feedback-dialog').dataset.priorityLabels || '[]'));
+      return;
+    }
     if (button.dataset.scenario) {
       if (!collectConditions()) return;
       const scenario = button.dataset.scenario, defaults = settings.scenario_defaults?.[scenario] || {};
@@ -565,7 +599,7 @@
         if (parsed) { const example = demands.find(d => d.sentence.trim() === state.sentence); state.conditions = example ? {...clone(parsed), ...clone(example.conditions), _matched:[...arr(parsed._matched).filter(text => !text.includes('預設倍率')), '依示範需求：需要 '+example.conditions.need_n+' 家，先列 '+(example.conditions.need_n*example.conditions.multiplier)+' 家候選']} : clone(parsed); state.conditions.hard ||= {}; state.conditions.soft ||= []; renderConditions(); $('#conditions-form').scrollIntoView({behavior:'smooth',block:'start'}); }
         break;
       }
-      case 'rank': if (collectConditions() && rerank()) go(2); break;
+      case 'rank': if (collectConditions() && rerank()) openPriorityModal(); break;
       case 'rerank': if (state.conditions && rerank()) { go(2); toast('已依 PM 回饋重新排列名單。'); } break;
       case 'back-input': go(1); break;
       case 'back-results': go(2); break;
