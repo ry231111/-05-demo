@@ -36,19 +36,21 @@ for (const demand of data.demands.slice(0, 4)) {
     console.log('  理由：' + first(c.reasons));
     console.log('  警訊：' + first(c.warnings));
   });
+  result.candidates.slice(1).forEach((candidate, index) => {
+    assert.ok(result.candidates[index].reasons.length >= candidate.reasons.length,
+      '候選名單必須依符合項目數由高至低排列');
+  });
   const chosen = result.candidates.find(c => !c.demoted);
   assert.ok(chosen, '示範需求應有可標回饋的候選');
   const feedback = Engine.feedbackItem(chosen.org_id, '不符合', '其他', '冒煙測試：確認移至最後');
   const reranked = Engine.rank(demand.conditions, [feedback]);
-  const last = reranked.candidates[reranked.candidates.length - 1];
-  assert.equal(last.org_id, chosen.org_id);
-  assert.equal(last.demoted, true);
-  assert.equal(last.score, chosen.score, '回饋只重排，不更動分數');
+  const demoted = reranked.candidates.find(c => c.org_id === chosen.org_id);
+  assert.ok(demoted?.demoted, '不符合回饋應保留為降序候選');
+  assert.equal(demoted.score, chosen.score, '回饋只重排，不更動分數');
   const replacement = reranked.candidates.filter(c => !c.demoted);
   assert.ok(replacement.length >= Math.min(result.target_n, result.candidates.length - 1));
   assert.equal(JSON.parse(Engine.exportFeedback([feedback]))[0].by, 'PM');
-  console.log('回饋驗證通過：' + chosen.org_id + ' 從第 ' + chosen.rank +
-    ' 名移到最後第 ' + last.rank + ' 名；未標不符合的候選 ' + replacement.length + ' 家。');
+  console.log('回饋驗證通過：' + chosen.org_id + ' 保留降序狀態；未標不符合的候選 ' + replacement.length + ' 家。');
 }
 assert.equal(results.length, 4, '應執行四個示範需求');
 

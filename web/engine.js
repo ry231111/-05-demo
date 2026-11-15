@@ -176,7 +176,9 @@
     const source = new Map(orgs().map(org => [org.id, org]));
     const eligible = () => pool.filter(c => !hardCheck(source.get(c.org_id), current).failed.length);
     const statusOrder = { match: 0, relaxed: 1, missing: 2 };
-    const compare = (a, b) => statusOrder[a.hard_status] - statusOrder[b.hard_status] ||
+    const compare = (a, b) => b.reasons.length - a.reasons.length ||
+      statusOrder[a.hard_status] - statusOrder[b.hard_status] ||
+      Number(Boolean(a.demoted)) - Number(Boolean(b.demoted)) ||
       b.score - a.score || a.org_id.localeCompare(b.org_id);
     const order = unique(conditions.relax_order || ['區域', '全職人數', '議題']);
     let next = 0;
@@ -195,7 +197,7 @@
     const retained = originalList.filter(c => c.demoted);
     if (retained.length) expand(list => list.filter(c => !c.demoted).length);
     const selected = eligible().filter(c => !c.demoted).sort(compare).slice(0, target_n);
-    const candidates = selected.concat(retained.sort(compare));
+    const candidates = selected.concat(retained).sort(compare);
     candidates.forEach((c, index) => { c.rank = index + 1; });
     return { target_n, relaxed, disabled_rules, excluded, candidates };
   }
