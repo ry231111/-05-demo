@@ -19,7 +19,7 @@ function first(items) {
 }
 
 const results = [];
-for (const demand of data.demands.slice(0, 4)) {
+for (const demand of data.demands) {
   console.log('\n=== ' + demand.id + ' ' + demand.title + ' ===');
   const parsed = Engine.parseSentence(demand.sentence);
   console.log('句子解析：', JSON.stringify(parsed, null, 2));
@@ -50,7 +50,7 @@ for (const demand of data.demands.slice(0, 4)) {
   console.log('回饋驗證通過：' + chosen.org_id + ' 從第 ' + chosen.rank +
     ' 名移到最後第 ' + last.rank + ' 名；未標不符合的候選 ' + replacement.length + ' 家。');
 }
-assert.equal(results.length, 4, '應執行四個示範需求');
+assert.equal(results.length, data.demands.length, '應執行全部示範需求');
 
 const candidates = results[0].candidates;
 const prompt = Engine.buildPrompt(data.demands[0].conditions, candidates);
@@ -58,10 +58,10 @@ console.log('\n=== 第一個需求：Claude 提示詞前 30 行 ===');
 console.log(prompt.split('\n').slice(0, 30).join('\n'));
 
 const owner = candidates.find(c => [...c.reasons, ...c.warnings]
-  .some(item => item.evidence.some(e => /^[CN]\d+$/.test(e.record_id))));
+  .some(item => item.evidence.some(e => /^[A-Z]{1,3}\d+$/.test(e.record_id))));
 assert.ok(owner, '應有含紀錄證據的候選');
 const evidence = [...owner.reasons, ...owner.warnings].flatMap(item => item.evidence);
-const ownRecord = evidence.find(e => /^[CN]\d+$/.test(e.record_id)).record_id;
+const ownRecord = evidence.find(e => /^[A-Z]{1,3}\d+$/.test(e.record_id)).record_id;
 const other = data.orgs.orgs.find(org => org.id !== owner.org_id && org.timeline.length);
 assert.ok(other);
 const foreignRecord = other.timeline[0].id;
@@ -111,6 +111,21 @@ assert.equal(restored.candidates[0].demoted, false, '最新日期回饋優先');
 Engine.init(data);
 assert.equal(Engine.parseSentence('找二十家南部全職3-30人的組織').need_n, 20);
 assert.equal(Engine.parseSentence('找5 家全職三到三十人').hard.全職人數.max, 30);
+// 二次篩選：選中排最前、淘汰剔除、名額補滿；不給參數時與第一輪相同。
+const round1 = Engine.rank(data.demands[0].conditions);
+const top10 = round1.candidates.slice(0, 10).map(c => c.org_id);
+const pickedIds = top10.slice(0, 3), rejectedIds = top10.slice(3);
+const learnedTags = Engine.learnFromSelection(round1, pickedIds, rejectedIds);
+assert.ok(learnedTags.length <= 6 && learnedTags.every(l => Math.abs(l.delta) >= 1));
+const round2 = Engine.rank(Object.assign({}, data.demands[0].conditions,
+  { learned: learnedTags, locked: pickedIds, removed: rejectedIds }));
+assert.deepEqual(round2.candidates.slice(0, 3).map(c => c.org_id), pickedIds);
+assert.ok(round2.candidates.every(c => !rejectedIds.includes(c.org_id)));
+assert.equal(round2.candidates.length, round1.candidates.length);
+assert.deepEqual(Engine.rank(Object.assign({}, data.demands[0].conditions,
+  { learned: [], locked: [], removed: [] })).candidates.map(c => c.org_id),
+round1.candidates.map(c => c.org_id));
+console.log('二次篩選驗證通過：學到 ' + learnedTags.length + ' 個標籤，選中置頂、淘汰剔除、名額補滿。');
 const nodeEngine = require(path.join(root, 'web/engine.js'));
 nodeEngine.init(data);
 assert.equal(nodeEngine.rank(data.demands[0].conditions).candidates[0].org_id,

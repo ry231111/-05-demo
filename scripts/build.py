@@ -108,6 +108,13 @@ def normalize(tables, config, rules, log):
             if record_id in seen_ids:
                 raise ValueError(f"紀錄編號重複，無法可靠引用：{record_id}")
             seen_ids.add(record_id)
+            guessed = None
+            if not row["org_id"] and row.get("org_name"):
+                guessed = guess_org(row["org_name"], orgs)
+                if guessed:
+                    row["org_id"] = guessed
+                    log.add("正規化修正", f"{record_id} 沒填組織編號，依自填名稱「{row['org_name']}」推定為 "
+                            f"{guessed}（{orgs[guessed]['name']}），請人工確認")
             if row["org_id"] not in orgs:
                 log.add("資料問題", f"{record_id} 組織編號 {row['org_id']!r} 不存在於 orgs；不併入組織")
             record = {"id": record_id, "org_id": row["org_id"],
@@ -117,6 +124,8 @@ def normalize(tables, config, rules, log):
                       "title": row.get("title") or None, "author": row.get("author") or None,
                       "source": row.get("source") if kind == "contact" else "顧問筆記",
                       "text": row["text"] or None, "duplicate_of": None}
+            if guessed:
+                record["org_guess"] = f"報名表沒填組織編號，系統依自填名稱「{row['org_name']}」推定歸戶，請確認"
             for field, category in (("type", "接觸類型"), ("source", "資料來源")):
                 raw = record[field]
                 value = maps.get(category, {}).get(raw, raw) or None
@@ -128,6 +137,20 @@ def normalize(tables, config, rules, log):
         log.add("未知類別值", f"{table} 資料列 {number}／{category}：{value!r}；保留原值，請補 mapping")
     mark_duplicates(records, log)
     return orgs, records
+
+
+def guess_org(name, orgs):
+    """報名表只填組織名稱時，用字元二元組重疊比對組織名稱；有明顯最佳者才回傳。"""
+    def grams(s):
+        s = re.sub(r"（[^）]*）|\([^)]*\)|[\s\W_]+", "", s.replace("臺", "台"))
+        return {s[i:i + 2] for i in range(len(s) - 1)}
+    target = grams(name)
+    if not target:
+        return None
+    scored = sorted(((len(target & grams(o["name"])) / len(target), oid) for oid, o in orgs.items()), reverse=True)
+    best = scored[0]
+    second = scored[1][0] if len(scored) > 1 else 0
+    return best[1] if best[0] >= 0.3 and best[0] > second else None
 
 
 def dedupe_text(value):
