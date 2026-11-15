@@ -220,7 +220,9 @@
     const lockedList = lockedIds.map(id => pool.find(c => c.org_id === id)).filter(Boolean);
     const fill_n = Math.max(0, target_n - lockedList.length);
     const statusOrder = { match: 0, relaxed: 1, missing: 2 };
-    const compare = (a, b) => statusOrder[a.hard_status] - statusOrder[b.hard_status] ||
+    const compare = (a, b) => b.reasons.length - a.reasons.length ||
+      statusOrder[a.hard_status] - statusOrder[b.hard_status] ||
+      Number(Boolean(a.demoted)) - Number(Boolean(b.demoted)) ||
       b.score - a.score || a.org_id.localeCompare(b.org_id);
     const order = unique(conditions.relax_order || ['區域', '全職人數', '議題']);
     let next = 0;
@@ -239,7 +241,8 @@
     const retained = originalList.filter(c => c.demoted);
     if (retained.length) expand(list => list.filter(c => !c.demoted).length);
     const selected = eligible().filter(c => !c.demoted).sort(compare).slice(0, fill_n);
-    const candidates = lockedList.concat(selected, retained.sort(compare));
+    // 選中的組織固定在最前；其餘依隊友的排序（符合項目數多者在前，不符合回饋者降序）。
+    const candidates = lockedList.concat(selected.concat(retained).sort(compare));
     candidates.forEach((c, index) => { c.rank = index + 1; });
     return { target_n, relaxed, disabled_rules, excluded, candidates, learned,
       removed: [...removed] };

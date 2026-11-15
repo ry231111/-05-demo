@@ -11,6 +11,7 @@
   const VOTES = 'good-match-labels-v1';
   const PEOPLE = 'good-match-people-v1';
   const LABEL_HISTORY = 'good-match-label-history-v1';
+  const DISCUSSIONS = 'good-match-discussions-v1';
   let storageAvailable = true;
   function read(key, fallback) {
     try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; }
@@ -29,6 +30,7 @@
   const votes = read(VOTES, {});
   const people = read(PEOPLE, ['PM', '資深顧問', '會員窗口', '其他夥伴']);
   const labelHistory = read(LABEL_HISTORY, []);
+  const discussions = read(DISCUSSIONS, []);
   const state = { step:1, sentence:'', conditions:null, result:null, selected:null, reply:'', verified:null, prompt:'', focusRecord:null, priorityLabels:[] };
   const orgs = arr(data?.orgs?.orgs);
   const meta = data?.orgs?.meta || {};
@@ -46,18 +48,38 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 4500);
   }
   function persist() { write(STORE, {items:feedback, deleted:[...deleted]}); }
+  function persistDiscussions() { write(DISCUSSIONS, discussions); }
   function personOptions(selected = '') {
     return people.map(person => '<option value="'+esc(person)+'" '+(person === selected ? 'selected' : '')+'>'+esc(person)+'</option>').join('')+
       '<option value="__new__">＋新增留言人</option>';
   }
-  function recordLabelEdit(orgId, action, label, by, reason = '') {
-    labelHistory.push({org_id:orgId, action, label, by, reason, date:new Date().toISOString()});
+  function recordLabelEdit(orgId, action, label, by, reason = '', kind = 'positive') {
+    labelHistory.push({org_id:orgId, action, label, by, reason, kind, date:new Date().toISOString()});
     write(LABEL_HISTORY, labelHistory);
+  }
+  function labelKind(orgId, label) {
+    const org = orgById(orgId);
+    const hit = arr(org?.hits).find(item => item.label === label);
+    if (hit) return hit.kind === 'warning' ? 'hesitation' : 'positive';
+    const discussion = discussions.find(item => item.org_id === orgId && arr(item.tags).includes(label));
+    if (discussion) return discussion.tag_kind || 'positive';
+    const item = feedback.find(record => record.org_id === orgId &&
+      (record.primary_label === label || arr(record.tags).includes(label)));
+    if (item) return item.tag_kinds?.[label] || (item.verdict === '不符合' ? 'hesitation' : 'positive');
+    return 'positive';
+  }
+  function signalBadge(label, kind) {
+    const hesitation = kind === 'hesitation';
+    return '<span class="badge '+(hesitation ? 'amber' : 'green')+' signal-badge"><span class="signal-kind">'+(hesitation ? '猶豫訊號' : '正向訊號')+'</span>'+esc(label)+'</span>';
+  }
+  function priorityLabelKind(label, candidates) {
+    const candidate = candidates.find(item => [...arr(item.reasons), ...arr(item.warnings)].some(reason => reason.label === label));
+    return candidate ? labelKind(candidate.org_id, label) : 'positive';
   }
   function labelHistoryPanel(orgId) {
     const entries = labelHistory.filter(item => item.org_id === orgId).slice().reverse();
     return '<div class="panel label-history-panel"><div class="section-label"><h2>標籤編輯紀錄</h2><span class="badge">'+entries.length+' 筆</span></div>'+
-      (entries.length ? '<div class="label-history-list">'+entries.map(item => '<article class="label-history-item"><div><span class="badge '+(item.action === 'add' ? 'green' : 'amber')+'">'+(item.action === 'add' ? '新增標籤' : '刪除標籤')+'</span> <strong>'+esc(item.label)+'</strong><p class="body-copy">'+(item.action === 'delete' ? '原因：'+esc(item.reason || '未填寫') : '來源：一句話回饋')+'</p></div><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date.replace('T',' ').slice(0,16))+'</small></article>').join('')+'</div>' :
+      (entries.length ? '<div class="label-history-list">'+entries.map(item => '<article class="label-history-item"><div><span class="badge '+(item.action === 'add' ? 'green' : 'amber')+'">'+(item.action === 'add' ? '新增標籤' : '刪除標籤')+'</span> '+signalBadge(item.label, item.kind)+'<p class="body-copy">'+(item.action === 'delete' ? '原因：'+esc(item.reason || '未填寫') : '來源：一句話回饋')+'</p></div><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date.replace('T',' ').slice(0,16))+'</small></article>').join('')+'</div>' :
         '<p class="body-copy">還沒有標籤編輯紀錄。新增或移除標籤後，這裡會留下可追溯的紀錄。</p>')+'</div>';
   }
   function engineReady() {
@@ -192,7 +214,7 @@
       '<div class="form-row"><div class="form-label">希望組織具備的特質 <small>加分條件，沒有符合也會保留考量</small></div><div class="chips">'+softEntries.map(([name, item]) => '<button type="button" title="'+esc(item.explain)+'" class="chip '+(arr(c.soft).includes(name) ? 'selected' : '')+'" data-chip="soft" data-value="'+esc(name)+'" aria-pressed="'+arr(c.soft).includes(name)+'">'+esc(name)+'</button>').join('')+'</div><div class="explanations">'+softEntries.filter(([name]) => arr(c.soft).includes(name)).map(([name, item]) => '<span>'+esc(name)+'：'+esc(item.explain)+'</span>').join('')+'</div></div>'+
       '<div class="form-row"><label class="switch"><input id="exclude-partner" type="checkbox" '+(c.exclude_recent_partner ? 'checked' : '')+'><span>排除近一年合作過的</span></label><p class="body-copy">近一年已陪跑或獎補助合作的組織，先留給下一次機會。</p></div>'+
       '<div class="form-row"><div class="form-label">其他條件</div>'+extraFields.map(field => '<div class="form-row"><div class="form-label">'+esc(field)+'</div>'+chipGroup(field, optionsFor(field), hard[field])+'</div>').join('')+'<label for="relax-order">名單不足時，依序放寬</label><select id="relax-order">'+['區域,全職人數,議題','全職人數,區域,議題','議題,區域,全職人數'].map(value => '<option value="'+value+'" '+(arr(c.relax_order).join(',') === value ? 'selected' : '')+'>'+value.replaceAll(',', ' → ')+'</option>').join('')+'</select></div></details>'+
-      '<div class="actions"><span class="muted">先有一份名單，再用你的經驗選出好夥伴。</span><button class="primary" data-action="rank">產生候選名單</button></div></div>';
+      '<div class="actions"><span class="muted">先有一份名單，再用你的經驗選出好夥伴。</span><button class="primary" data-action="rank">產生推薦名單</button></div></div>';
   }
   function collectConditions() {
     if (!state.conditions) return null;
@@ -241,14 +263,13 @@
     const fitRatio = Math.min(1, reasons.length / fitMax);
     const fitLevel = fitRatio >= .67 ? '高' : fitRatio >= .34 ? '中' : '低';
     return '<article class="candidate '+(demoted ? 'demoted' : '')+'" data-candidate="'+esc(c.org_id)+'"><div class="candidate-top"><div class="candidate-identity"><span class="rank">'+String(i + 1).padStart(2, '0')+'</span><div><h2>'+esc(c.name)+'</h2><div class="org-tags">'+tagFields.map(key => '<span class="badge">'+esc(display(f[key]))+(key === '全職人數' && f[key] != null ? ' 人' : '')+'</span>').join('')+(c.hard_status === 'relaxed' ? '<span class="badge amber">放寬後納入</span>' : '')+(c.hard_status === 'missing' || arr(c.missing_fields).length ? '<span class="badge amber">資料缺：'+arr(c.missing_fields).map(esc).join('、')+'</span>' : '')+'</div></div></div><div class="score"><small>排序摘要</small><strong>符合 '+reasons.length+' 項</strong><span class="score-detail">符合程度：'+fitLevel+(warnings.length ? ' · 待確認 '+warnings.length+' 項' : '')+'</span><div class="fit-meter" role="img" aria-label="符合程度 '+fitLevel+'，符合 '+reasons.length+' 項"><span style="width:'+Math.max(8, fitRatio*100)+'%"></span></div></div></div>'+
-      (priority.length ? '<div class="priority-labels"><span class="priority-label-title">優先呈現</span>'+priority.map(label => '<span class="badge green">'+esc(label)+'</span>').join('')+'</div>' : '')+
       '<details class="candidate-evidence"><summary>查看推薦依據、待確認與電訪問題</summary><div class="candidate-body">'+
       reasonColumn('推薦依據', reasons, '', c.org_id, '符合目前條件，可進一步認識。')+
       reasonColumn('待確認', warnings, 'warning', c.org_id, '目前沒有明確警訊，仍建議電訪確認。')+
       reasonColumn('電訪問題', calls, 'call', c.org_id, '確認參與意願、可投入人力與期待。')+'</div></details>'+
       (arr(c.soft_matched).length ? '<div class="soft-matches">'+arr(c.soft_matched).map(s => '<span class="badge '+(s.delta < 0 ? 'amber' : 'green')+'" title="'+esc(s.explain)+'">'+esc(s.name)+'</span>').join('')+'</div>' : '')+
       '<div class="candidate-footer"><div class="feedback-actions"><span>你的判斷，讓名單更貼近現場</span><button class="small-button '+(latest?.verdict === '符合' ? 'secondary' : '')+'" data-verdict="符合" data-org="'+esc(c.org_id)+'">符合</button><button class="small-button" data-verdict="不符合" data-org="'+esc(c.org_id)+'">不符合</button></div><button class="secondary small-button" data-detail="'+esc(c.org_id)+'">查看組織脈絡</button></div>'+
-      (latest ? '<div class="feedback-note"><span>'+(latest.verdict === '符合' ? 'PM 認為符合這次需求' : 'PM 判斷不符合 · '+esc(latest.reason_code || '其他'))+(latest.note ? '：'+esc(latest.note) : '')+(demoted ? ' · 已移至名單最後' : '')+'</span><button class="text-button small-button" data-undo="'+esc(c.org_id)+'">撤回</button></div>' : '')+'</article>';
+      (latest ? '<div class="feedback-note"><span>'+(latest.verdict === '符合' ? 'PM 認為符合這次需求' : 'PM 判斷不符合 · '+esc(latest.reason_code || '其他'))+(latest.note ? '：'+esc(latest.note) : '')+(demoted ? ' · 已移至名單最後' : '')+'</span><button class="text-button small-button" data-discuss="'+esc(c.org_id)+'">加入討論</button></div>' : '')+'</article>';
   }
   function renderResults() {
     const el = $('#step-2');
@@ -256,10 +277,10 @@
     const r = state.result, candidates = arr(r.candidates);
     const maxScore = Math.max(1, ...candidates.map(c => Number(c.score) || 0));
     const disabled = arr(r.disabled_rules);
-    el.innerHTML = heading('02', '這些組織，值得先聊聊', '先在這個工作區比較、查看依據，再留下本次媒合判斷。', '<div class="result-metrics"><div class="metric-pill"><b>'+candidates.length+'</b>候選組織</div><button class="secondary" data-step="5">選用 AI 整理工具</button></div>')+
+    el.innerHTML = heading('02', '這些組織，值得先聊聊', '先在這個工作區比較、查看依據，再留下本次媒合判斷。', '<div class="result-heading-tools"><div class="result-metrics"><div class="metric-pill"><b>'+candidates.length+'</b>候選組織</div><button class="secondary" data-step="5">看目前的待決策名單</button></div>'+(state.priorityLabels.length ? '<div class="priority-summary"><span class="priority-summary-title">主要推薦原因</span>'+state.priorityLabels.map(label => signalBadge(label, priorityLabelKind(label, candidates))).join('')+'</div>' : '')+'</div>')+
       (arr(r.relaxed).length ? '<div class="notice">名單不足，已自動放寬：'+r.relaxed.map(item => esc(item.field)+'（原本：'+esc(typeof item.original === 'object' && !Array.isArray(item.original) ? Object.entries(item.original || {}).map(([key,value]) => (key === 'min' ? '最少' : key === 'max' ? '最多' : key)+display(value)).join('、') : display(item.original))+'）'+(item.note ? ' · '+esc(item.note) : '')).join('；')+'</div>' : '')+
       (disabled.length ? '<details class="notice warning"><summary>有 '+disabled.length+' 條規則因資料缺欄位停用</summary>'+disabled.map(d => '<p>'+esc(d.id)+'：'+esc(d.reason)+'</p>').join('')+'</details>' : '')+
-      '<div class="results-tools"><span>先看推薦理由，再用現場經驗確認。分數只協助排序。</span><button class="text-button" data-step="1"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>調整條件</button></div>'+
+      '<div class="results-tools"><span>先看推薦理由，再用現場經驗確認。分數只協助排序。</span><button class="text-button" data-action="adjust-priority"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>調整標籤</button></div>'+
       (arr(r.excluded).length ? '<details class="notice"><summary>已排除 '+r.excluded.length+' 家'+(state.conditions.exclude_recent_partner ? '（近一年合作過）' : '')+'</summary>'+r.excluded.map(x => '<p>'+esc(x.name)+' · '+esc(x.reason)+'</p>').join('')+'</details>' : '')+
       (candidates.length ? '<div id="candidate-list">'+candidates.map((c, i) => candidateCard(c,i,maxScore)).join('')+'</div>' : empty('沒有符合的組織，試試放寬條件', '可以減少議題或區域限制，再試一次.'));
   }
@@ -267,8 +288,8 @@
   function feedbackWorkspace() {
     const entries = feedback.slice().reverse();
     return '<details class="workspace-feedback"><summary>團隊決策清單 <span class="badge green">'+feedback.length+' 筆</span></summary>'+
-      '<div class="workspace-feedback-body"><p class="body-copy">逐家確認要保留或暫不邀請，並指定名單最先呈現的推薦標籤。</p>'+
-      (entries.length ? '<div class="feedback-inline-list">'+entries.map(item => '<div class="feedback-inline-item decision-item"><div><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><p>首要呈現：'+esc(item.primary_label || '尚未指定')+(item.tags?.length ? ' · 新增標籤：'+esc(arr(item.tags).join('、')) : '')+'</p></div><button class="text-button danger" data-undo="'+esc(item.org_id)+'">撤回</button></div>').join('')+'</div>' : '<p class="muted">尚未留下決策，先在候選卡上選擇「符合」或「不符合」。</p>')+
+      '<div class="workspace-feedback-body"><p class="body-copy">逐家確認要保留或暫不邀請，並指定主要推薦原因。</p>'+
+      (entries.length ? '<div class="feedback-inline-list">'+entries.map(item => '<div class="feedback-inline-item decision-item"><div><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><p>主要推薦原因：'+esc(item.primary_label || '尚未指定')+(item.tags?.length ? ' · 新增標籤：'+esc(arr(item.tags).join('、')) : '')+'</p></div><button class="text-button" data-discuss="'+esc(item.org_id)+'">加入討論</button></div>').join('')+'</div>' : '<p class="muted">尚未留下決策，先在候選卡上選擇「符合」或「不符合」。</p>')+
       '</div></details>';
   }
   function selectOrg(id, record = null) {
@@ -336,7 +357,10 @@
     const key = feedbackKey(item);
     if (feedback.some(f => feedbackKey(f) === key)) { toast('這筆回饋已經記下了。'); return; }
     deleted.delete(key); feedback.push(item); persist();
-    tags.forEach(tag => recordLabelEdit(id, 'add', tag, by));
+    item.tag_kinds = Object.fromEntries(tags.map(tag => [tag, verdict === '不符合' ? 'hesitation' : 'positive']));
+    feedback[feedback.indexOf(item)] = item;
+    persist();
+    tags.forEach(tag => recordLabelEdit(id, 'add', tag, by, '', verdict === '不符合' ? 'hesitation' : 'positive'));
     if (state.result) rerank(); renderResults(); toast(verdict === '不符合' ? '已留下回饋，這家組織已移到名單最後。' : '已記下：這家組織符合本次需求。');
   }
   function openFeedback(id) {
@@ -413,7 +437,7 @@
   function renderPriorityModal(labels) {
     const dialog = $('#feedback-dialog');
     const selected = state.priorityLabels;
-    dialog.innerHTML = '<form id="priority-form"><div class="dialog-top"><h2 id="feedback-title">先決定要看什麼</h2><button type="button" data-action="close-feedback" aria-label="關閉標籤排序視窗"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button></div><p class="body-copy">請依序點選最想先看到的推薦標籤，審核名單會把它們固定顯示在每家組織上方。</p><div class="priority-picked">'+(selected.length ? selected.map((label, index) => '<span class="priority-picked-item"><b>'+(index+1)+'</b>'+esc(label)+'</span>').join('') : '<span class="muted">尚未選擇，請從下方開始。</span>')+'</div><div class="priority-options">'+labels.map(label => '<button type="button" class="chip '+(selected.includes(label) ? 'selected' : '')+'" data-priority-label="'+esc(label)+'" aria-pressed="'+selected.includes(label)+'" '+(selected.includes(label) ? 'disabled' : '')+'>'+esc(label)+'</button>').join('')+'</div><div class="actions"><button type="button" data-action="close-feedback">取消</button><button type="submit" class="primary" '+(!selected.length ? 'disabled' : '')+'>套用排序並查看名單</button></div></form>';
+    dialog.innerHTML = '<form id="priority-form"><div class="dialog-top"><h2 id="feedback-title">先決定要看什麼</h2><button type="button" data-action="close-feedback" aria-label="關閉標籤排序視窗"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button></div><p class="body-copy">請依序點選最想先看到的推薦標籤，推薦名單會把它們固定顯示在每家組織上方。</p><div class="priority-picked">'+(selected.length ? selected.map((label, index) => '<span class="priority-picked-item"><b>'+(index+1)+'</b>'+esc(label)+'</span>').join('') : '<span class="muted">尚未選擇，請從下方開始。</span>')+'</div><div class="priority-options">'+labels.map(label => '<button type="button" class="chip '+(selected.includes(label) ? 'selected' : '')+'" data-priority-label="'+esc(label)+'" aria-pressed="'+selected.includes(label)+'" '+(selected.includes(label) ? 'disabled' : '')+'>'+esc(label)+'</button>').join('')+'</div><div class="actions"><button type="button" data-action="close-feedback">取消</button><button type="submit" class="primary" '+(!selected.length ? 'disabled' : '')+'>套用排序並查看名單</button></div></form>';
   }
   function openPriorityModal() {
     const labels = availablePriorityLabels();
@@ -424,13 +448,48 @@
     dialog.dataset.priorityLabels = JSON.stringify(labels);
     dialog.showModal();
   }
+  function discussionLabels(orgId) {
+    const org = orgById(orgId);
+    return [...new Set([
+      ...arr(org?.hits).map(hit => hit.label),
+      ...feedback.filter(item => item.org_id === orgId).flatMap(item => [
+        item.primary_label, ...arr(item.reason_code), ...arr(item.tags)
+      ]),
+      ...discussions.filter(item => item.org_id === orgId).flatMap(item => arr(item.tags))
+    ].filter(Boolean))];
+  }
+  function openDiscussion(id) {
+    const dialog = $('#feedback-dialog');
+    const org = orgById(id);
+    const labels = discussionLabels(id);
+    const orgFeedback = feedback.filter(item => item.org_id === id).slice().reverse();
+    const orgDiscussions = discussions.filter(item => item.org_id === id).slice().reverse();
+    const records = [
+      ...orgFeedback.map(item => '<article class="discussion-record"><div><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+esc(item.verdict)+'</span><strong>'+esc(item.by || 'PM')+'</strong><small class="muted">'+esc(item.date || '')+'</small></div><p>主要推薦原因：'+(item.primary_label ? signalBadge(item.primary_label, item.tag_kinds?.[item.primary_label] || (item.verdict === '不符合' ? 'hesitation' : 'positive')) : esc(arr(item.reason_code).join('、') || '未指定'))+(arr(item.tags).length ? ' · '+arr(item.tags).map(tag => signalBadge(tag, item.tag_kinds?.[tag] || (item.verdict === '不符合' ? 'hesitation' : 'positive'))).join(' ') : '')+'</p><p class="body-copy">'+esc(item.note || '未填寫意見')+'</p></article>'),
+      ...orgDiscussions.map(item => '<article class="discussion-record discussion-opinion"><div><span class="badge blue">討論意見</span><strong>'+esc(item.by || 'PM')+'</strong><small class="muted">'+esc(item.date || '')+'</small></div><p class="body-copy">'+esc(item.note || '未填寫意見')+'</p>'+(arr(item.tags).length ? '<div class="org-tags">'+arr(item.tags).map(tag => signalBadge(tag, item.tag_kind)) .join('')+'</div>' : '')+'</article>')
+    ].join('');
+    dialog.innerHTML = '<form id="discussion-form"><div class="dialog-top"><h2 id="feedback-title">加入討論</h2><button type="button" data-action="close-feedback" aria-label="關閉加入討論視窗"><svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button></div><p class="body-copy">'+esc(org?.name || id)+'<br>先看系統標籤與團隊判斷，再留下這次討論意見。</p><div class="discussion-section"><h3>目前標籤</h3><div class="org-tags">'+(labels.length ? labels.map(label => signalBadge(label, labelKind(id, label))).join('') : '<span class="muted">目前沒有標籤</span>')+'</div></div><div class="discussion-section"><h3>其他人的判斷</h3><div class="discussion-records">'+(records || '<p class="muted">目前還沒有其他人的判斷。</p>')+'</div></div><label for="discussion-by">留言人</label><select id="discussion-by" required><option value="">請選擇留言人</option>'+personOptions()+'</select><div id="discussion-new-person-entry" class="new-person-entry" hidden><label for="new-discussion-person">新留言人姓名</label><div class="inline-fields"><input id="new-discussion-person" maxlength="30" placeholder="例如：王小明"><button type="button" class="secondary small-button" data-person-action="cancel" data-person-scope="discussion">取消</button><button type="button" class="primary small-button" data-person-action="add" data-person-scope="discussion">加入</button></div></div><label for="discussion-note">這次的討論意見</label><textarea id="discussion-note" required maxlength="500" placeholder="例如：先邀請窗口確認近期人力，再決定是否安排陪跑。"></textarea><label for="discussion-tag">新增標籤 <small>選填</small></label><input id="discussion-tag" maxlength="80" placeholder="例如：需要先確認人力"><label for="discussion-tag-kind">標籤分類</label><select id="discussion-tag-kind"><option value="positive">正向訊號</option><option value="hesitation">猶豫訊號</option></select><div class="actions"><button type="button" data-action="close-feedback">先取消</button><button type="submit" class="primary">保存討論</button></div></form>';
+    dialog.dataset.org = id;
+    dialog.showModal();
+    $('#discussion-by').focus();
+  }
+  function saveDiscussion(id, by, note, tag, tagKind = 'positive') {
+    const item = {org_id:id, by, note, tags:tag ? [tag] : [], tag_kind:tagKind || 'positive', date:new Date().toISOString()};
+    discussions.push(item);
+    persistDiscussions();
+    if (tag) recordLabelEdit(id, 'add', tag, by, '', item.tag_kind);
+    renderPrompt();
+    if (state.step === 2) renderResults();
+    $('#feedback-dialog').close();
+    toast(tag ? '已保存討論意見，並新增標籤。' : '已保存討論意見。');
+  }
   function renderPrompt() {
     const el = $('#step-5');
-    if (!state.result || !arr(state.result.candidates).length) { el.innerHTML = heading('05','團隊決策清單','先產生候選名單，再逐家確認要不要邀請。')+empty('先準備一份候選名單', '產生名單後，這裡會集中顯示團隊決策與首要標籤。','back-results','回候選名單'); return; }
+    if (!state.result || !arr(state.result.candidates).length) { el.innerHTML = heading('05','團隊決策清單','先產生候選名單，再逐家確認要不要邀請。')+empty('先準備一份候選名單', '產生名單後，這裡會集中顯示團隊決策與主要推薦原因。','back-results','回候選名單'); return; }
     const entries = feedback.slice().reverse();
-    el.innerHTML = heading('05','團隊決策清單','集中查看哪些組織要保留、哪些不要，以及每家最先呈現的推薦標籤。','<button class="secondary" data-step="2">回審核名單</button>')+
-      '<div class="panel decision-page-panel"><div class="section-label"><h2>要／不要與首要呈現標籤</h2><span class="badge green">'+entries.length+' 筆決策</span></div><p class="body-copy">這份清單取代檔案匯出，讓團隊直接用組織名稱與首要標籤討論下一步。</p>'+
-      (entries.length ? '<div class="decision-page-list">'+entries.map(item => '<article class="decision-page-item"><div class="decision-page-main"><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><strong>首要呈現：'+esc(item.primary_label || '尚未指定')+'</strong>'+(arr(item.tags).length ? '<div class="org-tags">'+arr(item.tags).map(tag => '<span class="badge green">新增：'+esc(tag)+'</span>').join('')+'</div>' : '')+(item.note ? '<p class="body-copy">'+esc(item.note)+'</p>' : '')+'</div><div class="decision-page-actions"><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date || '')+'</small><button class="text-button danger" data-undo="'+esc(item.org_id)+'">撤回</button></div></article>').join('') : '<div class="empty"><h2>還沒有團隊決策</h2><p>回到審核名單，替每家組織選擇「符合」或「不符合」。</p><button class="primary" data-step="2">回審核名單</button></div>')+'</div>';
+    el.innerHTML = heading('05','團隊決策清單','集中查看哪些組織要保留、哪些不要，以及每家主要推薦原因。','<button class="secondary" data-step="2">回考慮名單</button>')+
+      '<div class="panel decision-page-panel"><div class="section-label"><h2>要／不要與主要推薦原因</h2><span class="badge green">'+entries.length+' 筆決策</span></div><p class="body-copy">這份清單取代檔案匯出，讓團隊直接用組織名稱與主要推薦原因討論下一步。</p>'+
+      (entries.length ? '<div class="decision-page-list">'+entries.map(item => '<article class="decision-page-item"><div class="decision-page-main"><button class="text-button decision-org" data-detail="'+esc(item.org_id)+'">'+esc(orgById(item.org_id)?.name || item.org_id)+'</button><span class="badge '+(item.verdict === '符合' ? 'green' : 'amber')+'">'+(item.verdict === '符合' ? '要' : '不要')+'</span><strong>主要推薦原因：'+esc(item.primary_label || arr(item.reason_code).join('、') || '尚未指定')+'</strong>'+(arr(item.tags).length ? '<div class="org-tags">'+arr(item.tags).map(tag => signalBadge(tag, item.tag_kinds?.[tag] || (item.verdict === '不符合' ? 'hesitation' : 'positive'))).join('')+'</div>' : '')+(item.note ? '<p class="body-copy">'+esc(item.note)+'</p>' : '')+'</div><div class="decision-page-actions"><small class="muted">'+esc(item.by || 'PM')+' · '+esc(item.date || '')+'</small><button class="text-button" data-discuss="'+esc(item.org_id)+'">加入討論</button></div></article>').join('') : '<div class="empty"><h2>還沒有團隊決策</h2><p>回到考慮名單，替每家組織選擇「符合」或「不符合」。</p><button class="primary" data-step="2">回考慮名單</button></div>')+'</div>';
   }
   function renderVerification() {
     const el = $('#verification-results'); if (!el) return;
@@ -473,11 +532,12 @@
   });
   document.addEventListener('change', event => {
     if (event.target.id === 'org-picker' && event.target.value) selectOrg(event.target.value);
-    if (event.target.id === 'feedback-by') {
-      const entry = $('#new-person-entry');
+    if (['feedback-by', 'discussion-by'].includes(event.target.id)) {
+      const prefix = event.target.id === 'discussion-by' ? 'discussion-' : '';
+      const entry = $('#'+prefix+'new-person-entry');
       const isNew = event.target.value === '__new__';
       if (entry) entry.hidden = !isNew;
-      if (isNew) $('#new-feedback-person')?.focus();
+      if (isNew) $('#new-'+prefix+'person')?.focus();
     }
     if (event.target.dataset.feedbackReason) {
       const selected = [...document.querySelectorAll('[data-feedback-reason][aria-pressed="true"]')].map(button => button.dataset.feedbackReason);
@@ -490,7 +550,7 @@
     }
   });
   document.addEventListener('submit', event => {
-    if (!['negative-form', 'positive-form', 'priority-form'].includes(event.target.id)) return; event.preventDefault();
+    if (!['negative-form', 'positive-form', 'priority-form', 'discussion-form'].includes(event.target.id)) return; event.preventDefault();
     if (event.target.id === 'priority-form') {
       if (!state.priorityLabels.length) { toast('請至少選擇一個推薦標籤。'); return; }
       $('#feedback-dialog').close(); go(2); return;
@@ -503,6 +563,16 @@
       if (!by || !primary) { toast('請選擇留言人與主要參考標籤。'); return; }
       saveFeedback($('#feedback-dialog').dataset.org, '符合', primary, note, by, customTag ? [customTag] : [], primary);
       $('#feedback-dialog').close();
+      return;
+    }
+    if (event.target.id === 'discussion-form') {
+      const by = $('#discussion-by').value;
+      const note = $('#discussion-note').value.trim();
+      const tag = $('#discussion-tag').value.trim();
+      const tagKind = $('#discussion-tag-kind').value;
+      if (!by) { toast('請選擇留言人。'); return; }
+      if (!note) { toast('請留下這次的討論意見。'); $('#discussion-note').focus(); return; }
+      saveDiscussion($('#feedback-dialog').dataset.org, by, note, tag, tagKind);
       return;
     }
     const reasons = [...document.querySelectorAll('[data-feedback-reason][aria-pressed="true"]')].map(button => button.dataset.feedbackReason);
@@ -548,13 +618,15 @@
       return;
     }
     if (button.dataset.personAction) {
-      const entry = $('#new-person-entry');
-      const select = $('#feedback-by');
+      const isDiscussion = button.dataset.personScope === 'discussion';
+      const prefix = isDiscussion ? 'discussion-' : '';
+      const entry = $('#'+prefix+'new-person-entry');
+      const select = $('#'+prefix+'by');
       if (button.dataset.personAction === 'cancel') {
         entry.hidden = true; select.value = '';
         return;
       }
-      const name = $('#new-feedback-person').value.trim();
+      const name = $('#new-'+prefix+'person').value.trim();
       if (!name) { toast('請輸入留言人姓名。'); $('#new-feedback-person').focus(); return; }
       if (!people.includes(name)) { people.push(name); write(PEOPLE, people); }
       select.innerHTML = '<option value="">請選擇留言人</option>'+personOptions(name);
@@ -583,7 +655,7 @@
       write(VOTES,votes); renderDetail(); return;
     }
     if (button.dataset.verdict) { if (!engineReady()) return; if (button.dataset.verdict === '符合') openPositiveFeedback(button.dataset.org); else openFeedback(button.dataset.org); return; }
-    if (button.dataset.undo) { const latest = latestFeedback(button.dataset.undo); const index = feedback.indexOf(latest); if (index >= 0) { removeFeedback(index); toast('已撤回，名單已重新排序。'); } return; }
+    if (button.dataset.discuss) { openDiscussion(button.dataset.discuss); return; }
     if (button.dataset.remove != null) { removeFeedback(Number(button.dataset.remove)); toast('已刪除這筆回饋。'); return; }
     if (button.dataset.vote) {
       const hit = orgById(state.selected)?.hits?.[Number(button.dataset.hit)]; if (!hit) return;
@@ -604,6 +676,7 @@
       case 'back-input': go(1); break;
       case 'back-results': go(2); break;
       case 'close-feedback': $('#feedback-dialog').close(); break;
+      case 'adjust-priority': openPriorityModal(); break;
       case 'close-drawer': closeDrawer(); break;
       case 'download': {
         const exported = runEngine(() => Engine.exportFeedback(feedback)); if (typeof exported !== 'string') return;
