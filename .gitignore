@@ -3,3 +3,6 @@ output/extract_last_message.md
 __pycache__/
 *.pyc
 .claude/settings.local.json
+.github/skills/ui-ux-pro-max/
+.github/prompts
+.DS_Store

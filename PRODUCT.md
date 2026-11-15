@@ -1,0 +1,63 @@
+# Product
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+web
+
+## Users
+
+主要使用者是好事大平台的 PM。當 PM 接到企業陪跑、課程或走訪需求，需要開始找合適的公益組織時，會用這個工具把一句話需求轉成可調整的篩選條件，取得第一波候選名單。
+
+## Product Purpose
+
+好事媒合助手把組織主檔、接觸紀錄與顧問筆記整理成以組織為中心的資料，依需求條件產生候選名單、推薦理由、警訊與電訪問題。每個判斷都能回到紀錄編號與原文，讓 PM 在幾分鐘內開始判斷，再把「符合／不符合」與備註寫回後續流程。
+
+## Positioning
+
+它不是黑箱推薦器，而是把散落資料轉成「可解釋、可回溯、可由 PM 接手修正」的媒合起點：條件、分數、理由與引用都在同一個工作流程中。
+
+## Operating Context
+
+- 使用情境是 PM 接到企業一句話需求、準備找組織的當下。
+- 工作流程為需求輸入 → 條件確認 → 候選名單與組織脈絡 → PM 回饋重排 → 產生提示詞並驗證引用。
+- 資料來源是三張表：組織主檔、接觸紀錄、顧問筆記；資料可能來自 mock、演練或官方匯出的 CSV。
+- 產品供展示與實際操作 prototype 使用，預期可直接以 GitHub Pages 或本機靜態伺服器開啟。
+
+## Capabilities and Constraints
+
+- 支援硬條件篩選、規則加總排序、推薦理由、警訊、電訪問題、條件放寬與近期合作排除。
+- 支援 PM 標示符合／不符合、填寫原因與留言人，並將不符合項目移到名單後方。
+- 支援產生給 Claude 的提示詞，以及檢查貼回內容中的紀錄編號是否存在且屬於該組織。
+- 沒有後端資料庫、帳號或即時 AI API；排序與互動在瀏覽器完成，AI 標籤在建置時抽取一次。
+- 規則唯一來源是 `rules/rules.json`，資料欄位切換與值對應由 `config/columns.json` 控制。
+- 介面使用繁體中文；資料皆為虛構，不放真實個資。
+
+## Brand Commitments
+
+- 產品名稱為「好事媒合助手」，隸屬「好事大平台」。
+- 語氣面向 NGO PM，清楚、務實，讓推薦看起來有依據而不是不可質疑的自動決定。
+- 現有品牌標示使用「好事」字樣與 ✳ 標記；未確認其他品牌資產。
+
+## Evidence on Hand
+
+- [CLAUDE.md](/Users/o/Documents/GitHub/haoshi-matching/CLAUDE.md)：專案目的、使用情境、資料契約與限制。
+- [README.md](/Users/o/Documents/GitHub/haoshi-matching/README.md)：操作流程、資料流程、畫面與欄位對照、導入步驟。
+- [docs/訪談對照.md](/Users/o/Documents/GitHub/haoshi-matching/docs/訪談對照.md)：訪談痛點與設計對照。
+- [data/mock/](/Users/o/Documents/GitHub/haoshi-matching/data/mock/)：展示用虛構資料。
+- [web/](/Users/o/Documents/GitHub/haoshi-matching/web/)：可操作的靜態網頁 prototype。
+- 沒有真實組織資料、真實推薦成效或可對外宣稱的準確度證據；未來設計不得自行捏造。
+
+## Product Principles
+
+1. 先讓 PM 能在幾分鐘內開始工作，再追求更完整的功能。
+2. 每個 AI 或規則判斷都要附紀錄編號與原文，方便人確認。
+3. 推薦邏輯要能被 PM 看懂、調整並保留最後決定權。
+4. 資料與規則分離，換資料來源時不應重寫介面。
+5. 以組織為中心保存脈絡與回饋，而不是讓判斷只跟著單次任務或單一 PM。
+
+## Accessibility & Inclusion
+
+- 介面須維持繁體中文與清楚的工作流程標示。
+- 現有 prototype 已針對小螢幕避免破版；互動元件應保留鍵盤可操作、焦點可見與語意化標記。
