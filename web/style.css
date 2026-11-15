@@ -147,3 +147,8 @@ h3{font-weight:400}
   .steps button strong{font-size:11px}
   .steps button small{font-size:10px}
 }
+/* 置中單欄＋標題/工具列對齊白卡邊緣 */
+.intake-layout{grid-template-columns:minmax(0,1fr)!important;max-width:760px;margin:0 auto}
+#step-1 .page-heading{max-width:760px!important;margin-left:auto!important;margin-right:auto!important}
+#step-2 .page-heading{max-width:1000px!important;margin-left:auto!important;margin-right:auto!important}
+.results-tools{max-width:1000px;margin-left:auto!important;margin-right:auto!important;padding-left:0!important;padding-right:0!important}
