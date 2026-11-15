@@ -683,13 +683,15 @@
       const isDiscussion = button.dataset.personScope === 'discussion';
       const prefix = isDiscussion ? 'discussion-' : '';
       const entry = $('#'+prefix+'new-person-entry');
-      const select = $('#'+prefix+'by');
+      const select = $(isDiscussion ? '#discussion-by' : '#feedback-by');
+      const input = $(isDiscussion ? '#new-discussion-person' : '#new-feedback-person');
+      if (!entry || !select) return;
       if (button.dataset.personAction === 'cancel') {
         entry.hidden = true; select.value = '';
         return;
       }
-      const name = $('#new-'+prefix+'person').value.trim();
-      if (!name) { toast('請輸入留言人姓名。'); $('#new-feedback-person').focus(); return; }
+      const name = (input?.value || '').trim();
+      if (!name) { toast('請輸入留言人姓名。'); input?.focus(); return; }
       if (!people.includes(name)) { people.push(name); write(PEOPLE, people); }
       select.innerHTML = '<option value="">請選擇留言人</option>'+personOptions(name);
       select.value = name; entry.hidden = true; toast('已新增留言人：'+name); return;
