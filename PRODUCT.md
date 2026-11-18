@@ -42,11 +42,11 @@ web
 
 ## Evidence on Hand
 
-- [CLAUDE.md](/Users/o/Documents/GitHub/haoshi-matching/CLAUDE.md)：專案目的、使用情境、資料契約與限制。
-- [README.md](/Users/o/Documents/GitHub/haoshi-matching/README.md)：操作流程、資料流程、畫面與欄位對照、導入步驟。
-- [docs/訪談對照.md](/Users/o/Documents/GitHub/haoshi-matching/docs/訪談對照.md)：訪談痛點與設計對照。
-- [data/mock/](/Users/o/Documents/GitHub/haoshi-matching/data/mock/)：展示用虛構資料。
-- [web/](/Users/o/Documents/GitHub/haoshi-matching/web/)：可操作的靜態網頁 prototype。
+- [CLAUDE.md](CLAUDE.md)：專案目的、使用情境、資料契約與限制。
+- [README.md](README.md)：操作流程、資料流程、畫面與欄位對照、導入步驟。
+- [docs/訪談對照.md](docs/訪談對照.md)：訪談痛點與設計對照。
+- [data/mock/](data/mock/)：展示用虛構資料。
+- [web/](web/)：可操作的靜態網頁 prototype。
 - 沒有真實組織資料、真實推薦成效或可對外宣稱的準確度證據；未來設計不得自行捏造。
 
 ## Product Principles
