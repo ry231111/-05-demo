@@ -2,9 +2,9 @@
 
 **把企業的一句話需求，幾分鐘內變成一份「附依據」的公益組織候選名單。**
 
-### 👉 [線上試用](https://ry231111.github.io/-05-demo/)　免安裝、免登入，點開就能用
+### 👉 [線上試用](https://ry231111.github.io/haoshi-matching_v2/)　免安裝、免登入，點開就能用
 
-[![畫面截圖](docs/screenshot.jpg)](https://ry231111.github.io/-05-demo/)
+[![畫面截圖](docs/screenshot.jpg)](https://ry231111.github.io/haoshi-matching_v2/)
 
 > 🏆 數聚村莊《好事在數聚村莊｜數位快閃 AI Impact Day》黑客松（2026/11）**好事大平台組冠軍**。資料皆為主辦方提供的虛構資料。
 
@@ -30,13 +30,14 @@
 
 ## 團隊
 
-方向由三人共同討論決定。
+方向由 Roy、Agnes、Jane 共同討論決定。
 
 | 成員 | 負責 |
 |---|---|
 | **Roy** | 系統設計、以 AI 輔助開發實作整個系統 |
 | **Agnes** | 系統設計、使用者體驗、成果發表 |
 | **Jane** | 前端介面 |
+| **Jason** | 成果發表 |
 
 ## 技術
 
